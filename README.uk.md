@@ -91,6 +91,8 @@ atlasmd jira attachments PROJ-123                   # вкладення в .jir
 atlasmd wiki page 123456                            # сторінка wiki → Markdown + коментарі (inline з виділеним текстом)
 atlasmd wiki page "https://wiki.example.com/spaces/SPACE/pages/123456/..." --attachments   # зображення сторінки качаються завжди, --attachments — решта вкладень
 atlasmd wiki search "release notes" 30 --space SPACE   # пошук сторінок wiki: текст або готовий CQL
+atlasmd wiki search "title ~ release" --cql          # CQL розпізнається за умовою «поле оператор» (title = …, text ~ …);
+                                                    #   --cql / --text — задати явно; свій ORDER BY у CQL зберігається
 
 atlasmd probe                                       # версія, користувач, права, проєкти, дошки, поля, вкладення, Confluence
 atlasmd docx "<шлях>.docx"                          # локальний .docx → .md поруч (напр. ТЗ з архівів вкладень)

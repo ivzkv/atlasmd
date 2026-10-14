@@ -34,33 +34,55 @@ export function commentEditedAt(c: Json): string | undefined {
   return c.version?.number > 1 ? c.version.when : undefined;
 }
 
+/**
+ * All items of a Confluence list. The end is detected by `_links.next`, not by `size < limit`: the server may return
+ * a smaller page than requested (its own maximum limit), and the rest would then be lost silently.
+ */
 export async function fetchAll(wiki: RestClient, path: string): Promise<Json[]> {
   const limit = 100;
   const all: Json[] = [];
-  for (let start = 0; ; start += limit) {
-    const sep = path.includes('?') ? '&' : '?';
+  const sep = path.includes('?') ? '&' : '?';
+  for (let start = 0; ; ) {
     const page: Json = await wiki.get(`${path}${sep}limit=${limit}&start=${start}`);
-    all.push(...page.results);
-    if (page.size < limit) return all;
+    const results: Json[] = page.results ?? [];
+    all.push(...results);
+    // Without _links (an unusual response) — fallback: a full page means there may be more
+    const more = page._links ? Boolean(page._links.next) : results.length >= limit;
+    if (!more || !results.length) return all;
+    start += results.length;
   }
 }
 
 const isImage = (a: Json) =>
   /^image\//.test(a.extensions?.mediaType ?? '') || /\.(png|jpe?g|gif|bmp|svg|webp)$/i.test(a.title ?? '');
 
+// CQL = at least one "field operator …" condition (title = …, text ~ …, created > …, label in (…)), not just any `=`/`~` in the text
+const CQL_CONDITION_RE =
+  /\b(type|space|title|text|label|ancestor|parent|id|content|creator|contributor|mention|created|lastmodified|favourite|watcher|macro|siteSearch)(\.\w+)?\s*(!?=|!?~|[<>]=?|\s(not\s+)?in\s*\()/i;
+
+const ORDER_BY_RE = /\s+order\s+by\s+.*$/i;
+
+export type WikiSearchMode = 'auto' | 'cql' | 'text';
+
 /**
- * Wiki page search. [query] is either ready CQL (contains `=`/`~`) or plain text → `text ~ "…"`.
- * [space] limits the search to a space key (e.g. SPACE). Output is a table: pageId, space, updated, path › title.
+ * Wiki page search. [query] is either ready CQL or plain text → `type = page AND text ~ "…"`; [mode] auto
+ * detects CQL by a "field operator" condition, `--cql`/`--text` set it explicitly. An ORDER BY in the query is kept,
+ * otherwise results are sorted by modification date. [space] limits the search to a space key (e.g. SPACE).
+ * Output is a table: pageId, space, updated, path › title.
  */
-export async function wikiSearch(wiki: RestClient, query: string, limit: number, space?: string) {
-  const isCql = /[=~]/.test(query);
-  const base = isCql ? query : `type = page AND text ~ "${query.replace(/"/g, '\\"')}"`;
-  const cql = space ? `space = "${space}" AND (${base})` : base;
+export async function wikiSearch(wiki: RestClient, query: string, limit: number, space?: string, mode: WikiSearchMode = 'auto') {
+  const isCql = mode === 'cql' || (mode === 'auto' && CQL_CONDITION_RE.test(query));
+  const base = isCql ? query.trim() : `type = page AND text ~ "${query.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+  // ORDER BY may only end the whole query: when wrapping in parentheses (space = … AND (…)) it has to be moved out
+  const orderBy = ORDER_BY_RE.exec(base)?.[0].trim();
+  const condition = base.replace(ORDER_BY_RE, '');
+  const cql = space ? `space = "${space}" AND (${condition})` : condition;
+  const full = `${cql} ${orderBy ?? 'ORDER BY lastmodified DESC'}`;
   const r: Json = await wiki.get(
-    `/rest/api/content/search?limit=${limit}&expand=space,version,ancestors&cql=${encodeURIComponent(`${cql} ORDER BY lastmodified DESC`)}`,
+    `/rest/api/content/search?limit=${limit}&expand=space,version,ancestors&cql=${encodeURIComponent(full)}`,
   );
   const results: Json[] = r.results ?? [];
-  out(`CQL: ${cql}`);
+  out(`CQL: ${full}`);
   out(`Found: ${r.totalSize ?? results.length} (showing ${results.length})\n`);
   out('| pageId | Space | Updated | By | Page |');
   out('|---|---|---|---|---|');

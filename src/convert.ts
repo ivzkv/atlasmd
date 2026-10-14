@@ -75,28 +75,38 @@ turndown.remove(['script', 'style', 'noscript']);
 // Confluence tables have paragraphs/lists in cells, colspan, and often no header row —
 // the gfm plugin either breaks them or leaves raw HTML. So we build the table ourselves: cell → one-line
 // Markdown (line breaks → <br>), colspan → empty cells, the first row is always the header.
+// A table inside a cell cannot be a Markdown table — its rows become cell lines "cell — cell" (via <br>).
+// Each cell is converted by a separate turndown call, so nesting is not visible from the DOM — we track the depth ourselves.
+let tableDepth = 0;
+
 turndown.addRule('confluenceTable', {
   filter: 'table',
   replacement: (_content, node) => {
     const table = node as HTMLTableElement;
+    const nested = tableDepth > 0;
     const rows: string[][] = [];
     const sections = Array.from(table.children);
     const trs = sections.flatMap((s) => (s.nodeName === 'TR' ? [s] : Array.from(s.children).filter((c) => c.nodeName === 'TR')));
     for (const tr of trs) {
       const row: string[] = [];
       for (const cell of Array.from(tr.children).filter((c) => c.nodeName === 'TD' || c.nodeName === 'TH')) {
-        const text = turndown
-          .turndown((cell as HTMLElement).innerHTML)
-          .trim()
-          .replace(/\n+/g, '<br>')
-          .replace(/\|/g, '\\|');
-        row.push(text);
+        tableDepth++;
+        let text: string;
+        try {
+          text = turndown.turndown((cell as HTMLElement).innerHTML).trim();
+        } finally {
+          tableDepth--;
+        }
+        // Nested: the outer table escapes `|`; line breaks inside the cell become spaces so a row stays one line
+        row.push(nested ? text.replace(/\s*\n+\s*/g, ' ') : text.replace(/\n+/g, '<br>').replace(/\|/g, '\\|'));
+        if (nested) continue; // no colspan needed in a "cell — cell" line
         const span = Number(cell.getAttribute('colspan') ?? 1);
         for (let i = 1; i < span; i++) row.push('');
       }
       if (row.some((c) => c)) rows.push(row);
     }
     if (!rows.length) return '';
+    if (nested) return `\n\n${rows.map((r) => r.filter((c) => c).join(' — ')).join('\n')}\n\n`;
     const width = Math.max(...rows.map((r) => r.length));
     const line = (r: string[]) => `| ${[...r, ...Array(width - r.length).fill('')].join(' | ')} |`;
     return `\n\n${line(rows[0])}\n|${' --- |'.repeat(width)}\n${rows.slice(1).map(line).join('\n')}\n\n`;

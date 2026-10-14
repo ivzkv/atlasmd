@@ -18,8 +18,9 @@
 //
 //   wiki page <pageId|URL> [--attachments]
 //                         Confluence page as Markdown + comments (inline too) + attachments
-//   wiki search "<text|CQL>" [N] [--space SPACE]
-//                         wiki page search: text → text ~ "…", or ready CQL; N (default 20)
+//   wiki search "<text|CQL>" [N] [--space SPACE] [--cql|--text]
+//                         wiki page search: text → text ~ "…", or ready CQL (detected by a "field operator"
+//                         condition, --cql/--text set it explicitly); N (default 20)
 //
 //   track [KEY…] [--jql "<JQL>"] [--page <pageId|URL>]… [--since YYYY-MM-DD] [--remove KEY|pageId]…
 //                         changes in issues and linked wiki pages since the previous run (or a date);
@@ -353,7 +354,7 @@ interface LocalAttachment {
 }
 
 /**
- * Downloads a Jira attachment to dir as `<id>_<name>`; a .docx is also converted to .md. A file of the same size is
+ * Downloads a Jira attachment to dir as `<id>_<name>`; a .docx is also converted to .md (anew each time). A file of the same size is
  * not downloaded again (Jira attachments are immutable: a new version = a new id). Returns local names or an error.
  */
 async function downloadAttachment(jira: RestClient, a: Json, dir: string): Promise<LocalAttachment | { error: string }> {
@@ -369,7 +370,8 @@ async function downloadAttachment(jira: RestClient, a: Json, dir: string): Promi
     // The attachment's upload date in Jira = the file date
     await setFileTime(file, a.created);
   }
-  if (isDocx && !(await stat(join(dir, mdName!)).catch(() => undefined))) {
+  // The .md is regenerated every time (as for wiki attachments): otherwise text from an old converter version would stay
+  if (isDocx) {
     const md = await docxToMarkdownFile(file);
     await setFileTime(md, a.created);
   }
@@ -483,7 +485,8 @@ const JIRA_USAGE =
   '  jira attachments <KEY>                download all issue attachments';
 const WIKI_USAGE =
   '  wiki page <pageId|URL> [--attachments]           Confluence page → Markdown (+ all attachments)\n' +
-  '  wiki search "<text|CQL>" [N] [--space SPACE]     page search (default 20)';
+  '  wiki search "<text|CQL>" [N] [--space SPACE] [--cql|--text]\n' +
+  '                                                   page search (default 20)';
 const USAGE =
   'Usage: atlasmd <command>\n\n' +
   'Jira:\n' + JIRA_USAGE + '\n\n' +
@@ -530,9 +533,11 @@ async function wikiCommand(sub: string | undefined, args: string[]) {
     case 'search': {
       const spaceIdx = args.indexOf('--space');
       const space = spaceIdx >= 0 ? args[spaceIdx + 1] : undefined;
-      const rest = args.filter((_, i) => spaceIdx < 0 || (i !== spaceIdx && i !== spaceIdx + 1));
+      if (spaceIdx >= 0 && !space) throw new Error('--space needs a space key');
+      const mode = args.includes('--cql') ? 'cql' : args.includes('--text') ? 'text' : 'auto';
+      const rest = args.filter((a, i) => (spaceIdx < 0 || (i !== spaceIdx && i !== spaceIdx + 1)) && a !== '--cql' && a !== '--text');
       if (!rest[0]) throw new Error('Pass text or CQL in quotes');
-      return wikiSearch(confluenceClient(), rest[0], Number(rest[1] ?? 20), space);
+      return wikiSearch(confluenceClient(), rest[0], Number(rest[1] ?? 20), space, mode);
     }
     default:
       return usage(`Confluence commands:\n${WIKI_USAGE}`);

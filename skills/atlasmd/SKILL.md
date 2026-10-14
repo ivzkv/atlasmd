@@ -20,7 +20,7 @@ Jira:
 Confluence:
 
 - `wiki page <pageId|URL> [--attachments]` — Confluence page → Markdown with comments.
-- `wiki search "<text|CQL>" [N] [--space KEY]` — page search.
+- `wiki search "<text|CQL>" [N] [--space KEY] [--cql|--text]` — page search; CQL is detected by a "field operator" condition, `--cql`/`--text` force the mode; an ORDER BY in the CQL is kept.
 
 Both / other:
 

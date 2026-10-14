@@ -87,6 +87,8 @@ atlasmd jira attachments PROJ-123                   # attachments to .jira/out/P
 atlasmd wiki page 123456                            # wiki page → Markdown + comments (inline ones with the selected text)
 atlasmd wiki page "https://wiki.example.com/spaces/SPACE/pages/123456/..." --attachments   # page images are always downloaded, --attachments adds the rest
 atlasmd wiki search "release notes" 30 --space SPACE   # wiki page search: text or ready CQL
+atlasmd wiki search "title ~ release" --cql          # CQL is detected by a "field operator" condition (title = …, text ~ …);
+                                                    #   --cql / --text force the mode; your own ORDER BY in CQL is kept
 
 atlasmd probe                                       # version, user, permissions, projects, boards, fields, attachments, Confluence
 atlasmd docx "<path>.docx"                          # local .docx → .md next to it (e.g. specs from attachment archives)
