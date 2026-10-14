@@ -1,0 +1,6 @@
+node_modules/
+dist/
+# Settings (tokens) and results: issues, wiki pages, attachments, track state
+.jira/
+.env
+.env.*

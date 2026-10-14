@@ -1,0 +1,9 @@
+{
+  "//": "Package build: Node does not strip types in files under node_modules, so consumers get JS. Imports of './x.ts' are rewritten to './x.js'.",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "outDir": "dist",
+    "rootDir": "src"
+  }
+}
