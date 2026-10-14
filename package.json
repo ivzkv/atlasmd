@@ -1,0 +1,47 @@
+{
+  "name": "atlasmd",
+  "version": "1.0.4",
+  "private": true,
+  "type": "module",
+  "description": "Give your coding agent safe, read-only access to Jira and Confluence: issues and wiki pages as Markdown files, with a Claude Code skill",
+  "license": "MIT",
+  "repository": "github:ivzkv/atlasmd",
+  "engines": {
+    "node": ">=23.8"
+  },
+  "bin": {
+    "atlasmd": "bin/atlasmd.js"
+  },
+  "files": [
+    "bin",
+    "dist",
+    "skills",
+    "env.example"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepare": "npm run build",
+    "typecheck": "tsc --noEmit",
+    "dev": "node --use-system-ca src/cli.ts"
+  },
+  "dependencies": {
+    "diff": "^9.0.0",
+    "mammoth": "^1.13.0",
+    "turndown": "^7.2.4",
+    "turndown-plugin-gfm": "^1.0.2"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.4",
+    "@types/turndown": "^5.0.6",
+    "typescript": "^5.9.3"
+  },
+  "keywords": [
+    "jira",
+    "confluence",
+    "atlassian",
+    "markdown",
+    "cli",
+    "ai-agent",
+    "claude-code"
+  ]
+}

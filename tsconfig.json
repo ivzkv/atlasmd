@@ -1,0 +1,16 @@
+{
+  "//": "For the IDE and typecheck. In development src/*.ts run via Node's native type stripping (hence no enum/namespace); the package is built to dist/ via tsconfig.build.json.",
+  "compilerOptions": {
+    "target": "ES2023",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": true,
+    "verbatimModuleSyntax": true,
+    "erasableSyntaxOnly": true,
+    "types": ["node"]
+  },
+  "include": ["src"]
+}
