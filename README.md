@@ -1,90 +1,83 @@
-# atlasmd — Jira / Confluence → Markdown (read-only CLI)
+# atlasmd
 
 **English** · [Українська](README.uk.md) · [Русский](README.ru.md)
 
-Reads Jira issues and Confluence (wiki) pages through the REST API — both self-hosted Server/Data Center (Personal
-Access Token) and Atlassian Cloud (`*.atlassian.net`, API token + email) — and saves them as Markdown.
-It never changes anything in Jira or Confluence.
+**Give your coding agent safe, read-only access to Jira and Confluence.**
 
-Requires Node ≥ 23.8. Dependencies are only Markdown converters: `turndown` (+ gfm for tables) for wiki pages and
-`mammoth` for `.docx`.
+atlasmd is a small CLI that turns Jira issues and Confluence pages into clean Markdown files an AI agent can read.
+It was built for agents first (with a ready-made [Claude Code](https://claude.com/claude-code) skill), and it is
+just as usable by hand. Works with self-hosted Server/Data Center and Atlassian Cloud.
 
-## Adding it to a project
+## Why atlasmd
 
-Install it as a dev dependency of the project — after `git clone` + `npm install` everyone working on the project has it:
+- **Read-only by design.** There is no write operation to Jira or Confluence at all — you can let an agent use it
+  without worrying that it closes an issue or edits a page.
+- **Markdown, not JSON.** An issue or page becomes clean Markdown — tables, code, mentions as names, comments with
+  authors and dates — instead of thousands of tokens of raw REST response.
+- **Files the agent can come back to.** Everything is saved under predictable paths (`.jira/out/<KEY>/<KEY>.md`),
+  so the agent re-reads a file instead of repeating the request.
+- **Images and attachments, locally.** Images are downloaded and linked relatively, so a multimodal agent can see
+  them; `.docx` attachments are converted to `.md`.
+- **Secrets stay out of the context.** Tokens are never printed; the bundled skill and a deny rule keep the agent
+  away from `.jira/.env`.
+- **Fails fast, never retries.** On 401, CAPTCHA or an SSO redirect it stops at once — an agent in a loop cannot
+  lock the account with repeated attempts.
+- **Errors tell the next step.** Errors include the exact path and the command to run
+  (`… or create it: npx --no atlasmd init`), so the agent can fix things on its own.
+- **"What changed?" built in.** `track` reports what changed in issues and their linked wiki pages since the last
+  run or a date — a ready answer to one of the most common questions.
+- **Ships its own Claude Code skill.** The agent instructions come with the package, match its version, install with
+  one command, and `probe` tells you when they are outdated.
+
+## What it looks like
 
 ```
-npm i -D "git+https://<git-host>/<owner>/atlasmd.git#semver:^1.0.0"   # built on install (prepare)
+> what is in PROJ-123 and what changed since yesterday?
+
+$ npx --no atlasmd jira issue PROJ-123
+$ npx --no atlasmd track PROJ-123 --since 2026-10-13
+→ the agent reads .jira/out/PROJ-123/PROJ-123.md and the track report, and answers
 ```
 
-While developing atlasmd itself, link the local copy instead (nothing is written to the project's package.json):
+## Quick start
+
+Requires Node ≥ 23.8. Run from the root of your project:
 
 ```
-cd atlasmd && npm install && npm link       # once
-cd <project> && npm link atlasmd            # repeat after every npm install / npm ci in the project
+npm i -D "git+https://github.com/ivzkv/atlasmd.git#semver:^1.0.0"   # 1. install (built on install)
+npx --no atlasmd init                                                # 2. create .jira/.env, .jira/.gitignore and the skill
+                                                                     # 3. fill in your URLs and token in .jira/.env
+npx --no atlasmd probe                                               # 4. check access
 ```
 
-Run it as `npx --no atlasmd <command>`. Keep `--no`: without it, if the package is not installed, npx downloads
+Everyone working on the project gets the tool with `npm install`; each person runs `init` once and fills in their own
+token. Always run it as `npx --no atlasmd …` — without `--no`, if the package is not installed, npx downloads
 whatever public npm package has that name.
 
-Each person working on the project runs, once, from the project root:
-
-```
-npx --no atlasmd init     # creates .jira/.env from the template, .jira/.gitignore ("*") and the Claude Code skill
-```
-
-then fills in their tokens in `.jira/.env` and checks access with `npx --no atlasmd probe`.
-
-Settings and results live in the project, not in the package:
+Settings and results live in the project, not in the package, and the whole `.jira/` folder stays out of git
+through its own `.gitignore` (the project's `.gitignore` needs no changes):
 
 ```
 <project root>/.jira/.env    URLs and tokens          (other path — JIRA_ENV_FILE)
 <project root>/.jira/out/    issues, wiki, track      (other path — JIRA_OUT_DIR)
 ```
 
-Commands run from the project root: the tool reads `.jira/` only in the current folder and does not search parent
-folders (from another folder you get an error with the exact path). Another path can only be set explicitly:
-`JIRA_ENV_FILE`, `JIRA_OUT_DIR`. `probe` prints which files are used. The whole `.jira/` folder stays out of git
-thanks to its own `.gitignore`, so the project's `.gitignore` needs no changes.
+The tool reads `.jira/` only in the current folder and does not search parent folders — run it from the project
+root (from another folder you get an error with the exact path). `probe` prints which files are used.
 
-### Claude Code
+## Using with Claude Code
 
 - `npx --no atlasmd skill` (also run by `init`) puts `.claude/skills/atlasmd/SKILL.md` from the installed package
-  version into the project. After `npm update atlasmd`, run it again and commit the diff. `probe` shows whether
-  the skill is up to date.
+  version into the project. It tells Claude when and how to use the tool, how to handle failures, and what never
+  to touch. After `npm update atlasmd`, run it again and commit the diff; `probe` shows whether the skill is up to date.
 - Deny Claude access to the tokens in the project's `.claude/settings.json`:
   `"permissions": { "deny": ["Read(/.jira/.env*)", "Edit(/.jira/.env*)"] }`. `skill` reminds you if the rule is missing.
 
-## Configuration
-
-1. Fill in `.jira/.env` (created by `npx --no atlasmd init`) with one of the options (Jira and Confluence may differ):
-   - **Server/DC:** `JIRA_BASE_URL` + `JIRA_TOKEN`, `CONFLUENCE_BASE_URL` + `CONFLUENCE_TOKEN` — separate PATs from the
-     Jira and Confluence profiles, `Authorization: Bearer`. Do not set an email.
-   - **Cloud:** URLs are used exactly as given — `JIRA_BASE_URL=https://<site>.atlassian.net`,
-     `CONFLUENCE_BASE_URL=https://<site>.atlassian.net/wiki`; `ATLASSIAN_EMAIL` + `ATLASSIAN_API_TOKEN` — one token
-     from id.atlassian.com → Security → API tokens for both services, `Authorization: Basic`. Access is exactly what
-     this account has in the browser.
-   - The mode is detected like this: an email is set (`<SERVICE>_EMAIL` / `ATLASSIAN_EMAIL`) → basic, otherwise bearer;
-     to force it — `JIRA_AUTH` / `CONFLUENCE_AUTH` = `bearer` | `basic`. `probe` prints the mode in use.
-
-   Variables already set in the process environment take precedence over `.env` (handy for CI).
-2. HTTPS trusts certificates from the OS store (`--use-system-ca`). `JIRA_INSECURE_TLS=1` is for self-hosted servers
-   only, when the chain ends in a corporate root CA missing even there. The flag disables TLS verification for this
-   process only.
-3. Check access: `npx --no atlasmd probe`.
-
-Cloud differences the client handles itself: JQL search via `/rest/api/3/search/jql` (the old `/rest/api/2/search`
-is disabled on Cloud; no `total` is returned — search shows "N+", probe counts use `approximate-count`), users have
-an `accountId` instead of `name`/`username`. Base URLs are never rewritten.
+Other agents can use the same commands — any agent that can run a shell command and read a file works.
 
 ## Commands
 
 ```
-atlasmd version                                     # tool version (also in the first line of probe); not --version: npx intercepts it
-atlasmd init                                        # set up the project: .jira/.env, .jira/.gitignore, Claude Code skill
-atlasmd skill                                       # install / update .claude/skills/atlasmd/SKILL.md from this version
-atlasmd probe                                       # version, user, permissions, projects, boards, fields, attachments, Confluence
-
 atlasmd jira issue PROJ-123                         # issue: fields, description, comments, links (incl. wiki) → stdout and .jira/out/PROJ-123/PROJ-123.md;
                                                     #   issue images are downloaded and shown in the .md (in place in the description/comments)
 atlasmd jira issue PROJ-123 --attachments           # the same + all attachments next to it, linked from the .md (.docx → also .md)
@@ -95,11 +88,16 @@ atlasmd wiki page 123456                            # wiki page → Markdown + c
 atlasmd wiki page "https://wiki.example.com/spaces/SPACE/pages/123456/..." --attachments   # page images are always downloaded, --attachments adds the rest
 atlasmd wiki search "release notes" 30 --space SPACE   # wiki page search: text or ready CQL
 
+atlasmd probe                                       # version, user, permissions, projects, boards, fields, attachments, Confluence
 atlasmd docx "<path>.docx"                          # local .docx → .md next to it (e.g. specs from attachment archives)
+atlasmd init                                        # set up the project: .jira/.env, .jira/.gitignore, Claude Code skill
+atlasmd skill                                       # install / update .claude/skills/atlasmd/SKILL.md from this version
+atlasmd version                                     # tool version (also in the first line of probe); not --version: npx intercepts it
 ```
 
-`wiki page` accepts a pageId, `viewpage.action?pageId=…`, `/spaces/X/pages/<id>/…` or `/display/SPACE/Title`.
-The result goes to stdout and to `.jira/out/wiki/<pageId>/`.
+`atlasmd jira` or `atlasmd wiki` without a subcommand prints that group's commands. `wiki page` accepts a pageId,
+`viewpage.action?pageId=…`, `/spaces/X/pages/<id>/…` or `/display/SPACE/Title`; the result goes to stdout and to
+`.jira/out/wiki/<pageId>/`.
 
 Dates: the output includes comment creation and edit dates, wiki versions and attachment dates. Downloaded files get
 the real date from Jira (attachment upload date) / Confluence (version date) on disk, not the download time.
@@ -138,8 +136,37 @@ Dynamic parts of the Jira macro in wiki pages (issue title/status) are ignored w
 - The API does not tell who viewed an issue or page.
 - `track` does not run on its own — call it whenever you sync.
 
+## Configuration
+
+`.jira/.env` (created by `npx --no atlasmd init` from [env.example](env.example)) — one of the options; Jira and
+Confluence may differ:
+
+- **Server/DC:** `JIRA_BASE_URL` + `JIRA_TOKEN`, `CONFLUENCE_BASE_URL` + `CONFLUENCE_TOKEN` — separate PATs from the
+  Jira and Confluence profiles, `Authorization: Bearer`. Do not set an email.
+- **Cloud:** URLs are used exactly as given — `JIRA_BASE_URL=https://<site>.atlassian.net`,
+  `CONFLUENCE_BASE_URL=https://<site>.atlassian.net/wiki`; `ATLASSIAN_EMAIL` + `ATLASSIAN_API_TOKEN` — one token
+  from id.atlassian.com → Security → API tokens for both services, `Authorization: Basic`. Access is exactly what
+  this account has in the browser.
+- The mode is detected like this: an email is set (`<SERVICE>_EMAIL` / `ATLASSIAN_EMAIL`) → basic, otherwise bearer;
+  to force it — `JIRA_AUTH` / `CONFLUENCE_AUTH` = `bearer` | `basic`. `probe` prints the mode in use.
+
+Variables already set in the process environment take precedence over `.env` (handy for CI).
+
+HTTPS trusts certificates from the OS store (`--use-system-ca`). `JIRA_INSECURE_TLS=1` is for self-hosted servers
+only, when the chain ends in a corporate root CA missing even there; it disables TLS verification for this process only.
+
+<details>
+<summary>Cloud differences the client handles itself</summary>
+
+JQL search via `/rest/api/3/search/jql` (the old `/rest/api/2/search` is disabled on Cloud; no `total` is returned —
+search shows "N+", probe counts use `approximate-count`), users have an `accountId` instead of `name`/`username`.
+Base URLs are never rewritten.
+
+</details>
+
 ## Security
 
+- No write requests to Jira or Confluence — only reads.
 - On 401, a redirect to SSO/login, or CAPTCHA the client stops at once, without retries (self-hosted Jira locks
   REST behind CAPTCHA after repeated 401s).
 - Tokens are never logged. If a token leaks, revoke it in the Jira/Confluence profile → Personal Access Tokens
@@ -148,11 +175,21 @@ Dynamic parts of the Jira macro in wiki pages (issue title/status) are ignored w
 ## Development
 
 ```
-npm install                    # also builds dist/ (prepare); linked projects see changes after npm run build
+npm install                    # also builds dist/ (prepare)
 npm run dev -- jira issue X-1  # run from src/*.ts without building (Node's native type stripping)
 npm run typecheck
 npm run build                  # dist/ — what bin/atlasmd.js runs
 ```
+
+To try local changes in a project, link the working copy (nothing is written to the project's package.json):
+
+```
+cd atlasmd && npm link                      # once
+cd <project> && npm link atlasmd            # repeat after every npm install / npm ci in the project
+```
+
+Linked projects see changes after `npm run build`. Dependencies are only Markdown converters: `turndown` (+ gfm for
+tables) and `mammoth` for `.docx`.
 
 ## Releases
 

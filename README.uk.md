@@ -1,91 +1,87 @@
-# atlasmd — Jira / Confluence → Markdown (read-only CLI)
+# atlasmd
 
 [English](README.md) · **Українська** · [Русский](README.ru.md)
 
-Читає тікети Jira і сторінки Confluence (wiki) через REST API — і self-hosted Server/Data Center (Personal Access
-Token), і Atlassian Cloud (`*.atlassian.net`, API token + email) — і зберігає їх у Markdown.
-Нічого в Jira/Confluence не змінює.
+**Дайте своєму coding-агенту безпечний read-only доступ до Jira і Confluence.**
 
-Потрібен Node ≥ 23.8. Залежності — лише конвертери в Markdown: `turndown` (+gfm для таблиць) для сторінок wiki
-і `mammoth` для `.docx`.
+atlasmd — невеликий CLI, який перетворює тікети Jira і сторінки Confluence на чисті Markdown-файли, що їх може
+читати AI-агент. Він створений насамперед для агентів (з готовим skill для [Claude Code](https://claude.com/claude-code)),
+але так само зручний і вручну. Працює з self-hosted Server/Data Center і з Atlassian Cloud.
 
 > Вивід інструмента (stdout, `.md`-файли, звіти `track`) — англійською. Цей файл — переклад [README.md](README.md);
 > якщо вони розходяться, правильний англійський.
 
-## Підключення до проєкту
+## Чому atlasmd
 
-Пакет ставиться як dev-залежність проєкту — після `git clone` + `npm install` інструмент є в усіх, хто працює з проєктом:
+- **Лише читання — за задумом.** Жодної операції запису в Jira чи Confluence немає взагалі — агенту можна дати
+  доступ, не боячись, що він закриє тікет чи змінить сторінку.
+- **Markdown, а не JSON.** Тікет чи сторінка стає чистим Markdown — таблиці, код, згадки іменами, коментарі
+  з авторами й датами — замість тисяч токенів сирої REST-відповіді.
+- **Файли, до яких агент може повернутися.** Усе зберігається за передбачуваними шляхами (`.jira/out/<KEY>/<KEY>.md`),
+  тож агент перечитує файл, а не повторює запит.
+- **Картинки й вкладення — локально.** Зображення скачуються й підставляються відносними посиланнями, тож
+  мультимодальний агент їх бачить; вкладення `.docx` конвертуються в `.md`.
+- **Секрети не потрапляють у контекст.** Токени ніколи не друкуються; skill і правило заборони не підпускають
+  агента до `.jira/.env`.
+- **Падає одразу, без повторів.** На 401, CAPTCHA чи редирект на SSO зупиняється відразу — агент у циклі не
+  заблокує обліковий запис повторними спробами.
+- **Помилки підказують наступний крок.** У помилці — точний шлях і команда, яку виконати
+  (`… or create it: npx --no atlasmd init`), тож агент виправляється сам.
+- **«Що змінилось?» — з коробки.** `track` показує, що змінилось у тікетах і пов'язаних сторінках wiki з минулого
+  запуску чи з дати — готова відповідь на одне з найчастіших питань.
+- **Власний skill для Claude Code.** Інструкції для агента йдуть разом із пакетом, відповідають його версії,
+  ставляться однією командою, а `probe` підкаже, коли вони застаріли.
+
+## Як це виглядає
 
 ```
-npm i -D "git+https://<git-host>/<owner>/atlasmd.git#semver:^1.0.0"   # при встановленні збирається сам (prepare)
+> що в PROJ-123 і що змінилось з учора?
+
+$ npx --no atlasmd jira issue PROJ-123
+$ npx --no atlasmd track PROJ-123 --since 2026-10-13
+→ агент читає .jira/out/PROJ-123/PROJ-123.md і звіт track та відповідає
 ```
 
-Під час розробки самого atlasmd замість цього підключають локальну копію (у package.json проєкту нічого не пишеться):
+## Швидкий старт
+
+Потрібен Node ≥ 23.8. З кореня вашого проєкту:
 
 ```
-cd atlasmd && npm install && npm link       # один раз
-cd <проєкт> && npm link atlasmd             # повторювати після кожного npm install / npm ci у проєкті
+npm i -D "git+https://github.com/ivzkv/atlasmd.git#semver:^1.0.0"   # 1. встановити (збирається при встановленні)
+npx --no atlasmd init                                                # 2. створити .jira/.env, .jira/.gitignore і skill
+                                                                     # 3. вписати свої URL і токен у .jira/.env
+npx --no atlasmd probe                                               # 4. перевірити доступ
 ```
 
-Запуск — `npx --no atlasmd <команда>`. `--no` обов'язковий: без нього, якщо пакет не встановлено, npx скачає
-з публічного npm будь-який пакет з такою назвою.
+Усі, хто працює з проєктом, отримують інструмент через `npm install`; кожен один раз запускає `init` і вписує свій
+токен. Запускайте завжди як `npx --no atlasmd …` — без `--no`, якщо пакет не встановлено, npx скачає з публічного
+npm будь-який пакет з такою назвою.
 
-Кожен, хто працює з проєктом, один раз виконує з кореня проєкту:
-
-```
-npx --no atlasmd init     # створює .jira/.env з шаблону, .jira/.gitignore ("*") і skill для Claude Code
-```
-
-вписує свої токени в `.jira/.env` і перевіряє доступ: `npx --no atlasmd probe`.
-
-Налаштування й результати лежать у проєкті, а не в пакеті:
+Налаштування й результати лежать у проєкті, а не в пакеті, і вся тека `.jira/` поза git завдяки власному
+`.gitignore` (`.gitignore` проєкту правити не треба):
 
 ```
 <корінь проєкту>/.jira/.env    URL і токени          (інший шлях — JIRA_ENV_FILE)
 <корінь проєкту>/.jira/out/    тікети, wiki, track   (інший шлях — JIRA_OUT_DIR)
 ```
 
-Команди запускаються з кореня проєкту: інструмент бере `.jira/` лише в поточній теці, вгору не шукає
-(з іншої теки — помилка з точним шляхом). Інший шлях можна задати тільки явно: `JIRA_ENV_FILE`, `JIRA_OUT_DIR`.
-`probe` друкує, які файли використано. Уся тека `.jira/` поза git завдяки власному `.gitignore` — `.gitignore`
-проєкту правити не треба.
+Інструмент бере `.jira/` лише в поточній теці й вгору не шукає — запускайте з кореня проєкту (з іншої теки —
+помилка з точним шляхом). `probe` друкує, які файли використано.
 
-### Claude Code
+## Використання з Claude Code
 
 - `npx --no atlasmd skill` (робить і `init`) кладе в проєкт `.claude/skills/atlasmd/SKILL.md` з установленої версії
-  пакета. Після `npm update atlasmd` — повторити й закомітити diff. `probe` показує, чи skill актуальний.
+  пакета. Він пояснює Claude, коли й як користуватися інструментом, що робити при збоях і чого не чіпати ніколи.
+  Після `npm update atlasmd` — повторити й закомітити diff; `probe` показує, чи skill актуальний.
 - Заборонити Claude доступ до токенів у `.claude/settings.json` проєкту:
   `"permissions": { "deny": ["Read(/.jira/.env*)", "Edit(/.jira/.env*)"] }`. `skill` нагадає, якщо правила немає.
 
-## Налаштування
-
-1. Заповнити `.jira/.env` (створює `npx --no atlasmd init`) — один із варіантів (можна різні для Jira і Confluence):
-   - **Server/DC:** `JIRA_BASE_URL` + `JIRA_TOKEN`, `CONFLUENCE_BASE_URL` + `CONFLUENCE_TOKEN` — окремі PAT з профілів
-     Jira і Confluence, `Authorization: Bearer`. Email не задавати.
-   - **Cloud:** URL задаються явно, як є — `JIRA_BASE_URL=https://<site>.atlassian.net`,
-     `CONFLUENCE_BASE_URL=https://<site>.atlassian.net/wiki`; `ATLASSIAN_EMAIL` + `ATLASSIAN_API_TOKEN` — один токен
-     з id.atlassian.com → Security → API tokens на обидва сервіси, `Authorization: Basic`. Доступ — рівно той,
-     що в цього облікового запису в браузері.
-   - Режим визначається так: є email (`<SERVICE>_EMAIL` / `ATLASSIAN_EMAIL`) → basic, немає → bearer;
-     примусово — `JIRA_AUTH` / `CONFLUENCE_AUTH` = `bearer` | `basic`. `probe` друкує, який режим застосовано.
-
-   Змінні, вже задані в оточенні процесу, мають пріоритет над `.env` (зручно для CI).
-2. HTTPS довіряє сертифікатам зі сховища ОС (`--use-system-ca`). `JIRA_INSECURE_TLS=1` — лише для self-hosted, якщо
-   ланцюжок закінчується корпоративним Root CA, якого немає і там. Прапорець вимикає перевірку TLS лише для цього процесу.
-3. Перевірити доступ: `npx --no atlasmd probe`.
-
-Відмінності Cloud, які клієнт обробляє сам: JQL-пошук через `/rest/api/3/search/jql` (старий `/rest/api/2/search`
-у Cloud вимкнено; `total` не повертається — у пошуку «N+», кількість у probe — `approximate-count`), користувачі
-мають `accountId` замість `name`/`username`. Базові URL клієнт не змінює.
+Інші агенти можуть користуватися тими самими командами — підійде будь-який агент, що вміє запускати команду
+в shell і читати файл.
 
 ## Команди
 
 ```
-atlasmd version                                     # версія інструмента (є й у першому рядку probe); не --version: його перехоплює npx
-atlasmd init                                        # підключити проєкт: .jira/.env, .jira/.gitignore, skill для Claude Code
-atlasmd skill                                       # встановити / оновити .claude/skills/atlasmd/SKILL.md з цієї версії
-atlasmd probe                                       # версія, користувач, права, проєкти, дошки, поля, вкладення, Confluence
-
 atlasmd jira issue PROJ-123                         # тікет: поля, опис, коментарі, лінки (у т.ч. на wiki) → stdout і .jira/out/PROJ-123/PROJ-123.md;
                                                     #   картинки тікета качаються й видні в .md (в описі/коментарях — на своїх місцях)
 atlasmd jira issue PROJ-123 --attachments           # те саме + усі вкладення поруч, у .md — посилання на них (.docx → ще й .md)
@@ -96,11 +92,16 @@ atlasmd wiki page 123456                            # сторінка wiki → 
 atlasmd wiki page "https://wiki.example.com/spaces/SPACE/pages/123456/..." --attachments   # зображення сторінки качаються завжди, --attachments — решта вкладень
 atlasmd wiki search "release notes" 30 --space SPACE   # пошук сторінок wiki: текст або готовий CQL
 
+atlasmd probe                                       # версія, користувач, права, проєкти, дошки, поля, вкладення, Confluence
 atlasmd docx "<шлях>.docx"                          # локальний .docx → .md поруч (напр. ТЗ з архівів вкладень)
+atlasmd init                                        # підключити проєкт: .jira/.env, .jira/.gitignore, skill для Claude Code
+atlasmd skill                                       # встановити / оновити .claude/skills/atlasmd/SKILL.md з цієї версії
+atlasmd version                                     # версія інструмента (є й у першому рядку probe); не --version: його перехоплює npx
 ```
 
-`wiki page` приймає pageId, `viewpage.action?pageId=…`, `/spaces/X/pages/<id>/…` або `/display/SPACE/Title`.
-Результат — у stdout і в `.jira/out/wiki/<pageId>/`.
+`atlasmd jira` чи `atlasmd wiki` без підкоманди показує команди своєї групи. `wiki page` приймає pageId,
+`viewpage.action?pageId=…`, `/spaces/X/pages/<id>/…` або `/display/SPACE/Title`; результат — у stdout і в
+`.jira/out/wiki/<pageId>/`.
 
 Дати: у виводі є дати створення і правки коментарів, версії й дати вкладень wiki. Завантажені файли отримують
 на диску реальну дату з Jira (дата завантаження вкладення) / Confluence (дата версії), а не момент завантаження.
@@ -139,8 +140,37 @@ atlasmd track --remove PROJ-456                     # зняти з нагляд
 - Хто переглядав тікет/сторінку, API не віддає.
 - `track` не запускається сам — його викликають у момент синку.
 
+## Налаштування
+
+`.jira/.env` (створює `npx --no atlasmd init` з [env.example](env.example)) — один із варіантів; для Jira і Confluence
+можуть бути різні:
+
+- **Server/DC:** `JIRA_BASE_URL` + `JIRA_TOKEN`, `CONFLUENCE_BASE_URL` + `CONFLUENCE_TOKEN` — окремі PAT з профілів
+  Jira і Confluence, `Authorization: Bearer`. Email не задавати.
+- **Cloud:** URL задаються явно, як є — `JIRA_BASE_URL=https://<site>.atlassian.net`,
+  `CONFLUENCE_BASE_URL=https://<site>.atlassian.net/wiki`; `ATLASSIAN_EMAIL` + `ATLASSIAN_API_TOKEN` — один токен
+  з id.atlassian.com → Security → API tokens на обидва сервіси, `Authorization: Basic`. Доступ — рівно той,
+  що в цього облікового запису в браузері.
+- Режим визначається так: є email (`<SERVICE>_EMAIL` / `ATLASSIAN_EMAIL`) → basic, немає → bearer;
+  примусово — `JIRA_AUTH` / `CONFLUENCE_AUTH` = `bearer` | `basic`. `probe` друкує, який режим застосовано.
+
+Змінні, вже задані в оточенні процесу, мають пріоритет над `.env` (зручно для CI).
+
+HTTPS довіряє сертифікатам зі сховища ОС (`--use-system-ca`). `JIRA_INSECURE_TLS=1` — лише для self-hosted, якщо
+ланцюжок закінчується корпоративним Root CA, якого немає і там; вимикає перевірку TLS лише для цього процесу.
+
+<details>
+<summary>Відмінності Cloud, які клієнт обробляє сам</summary>
+
+JQL-пошук через `/rest/api/3/search/jql` (старий `/rest/api/2/search` у Cloud вимкнено; `total` не повертається —
+у пошуку «N+», кількість у probe — `approximate-count`), користувачі мають `accountId` замість `name`/`username`.
+Базові URL клієнт не змінює.
+
+</details>
+
 ## Безпека
 
+- Жодних запитів на запис у Jira чи Confluence — лише читання.
 - На 401, редирект на SSO/логін або CAPTCHA клієнт зупиняється одразу, без повторів (self-hosted Jira після
   кількох 401 закриває REST за CAPTCHA).
 - Токени не логуються. Якщо токен засвітився — відкликати в профілі Jira/Confluence → Personal Access Tokens
@@ -149,11 +179,21 @@ atlasmd track --remove PROJ-456                     # зняти з нагляд
 ## Розробка
 
 ```
-npm install                    # заодно збирає dist/ (prepare); у проєктах через npm link зміни видно після npm run build
+npm install                    # заодно збирає dist/ (prepare)
 npm run dev -- jira issue X-1  # запуск із src/*.ts без збірки (нативне стирання типів Node)
 npm run typecheck
 npm run build                  # dist/ — те, що запускає bin/atlasmd.js
 ```
+
+Щоб спробувати локальні зміни в проєкті, підключіть робочу копію (у package.json проєкту нічого не пишеться):
+
+```
+cd atlasmd && npm link                      # один раз
+cd <проєкт> && npm link atlasmd             # повторювати після кожного npm install / npm ci у проєкті
+```
+
+Підключені проєкти бачать зміни після `npm run build`. Залежності — лише конвертери в Markdown: `turndown` (+gfm для
+таблиць) і `mammoth` для `.docx`.
 
 ## Релізи
 

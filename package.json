@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Read-only CLI for Jira and Confluence (Server/DC and Cloud): issues, search, attachments, wiki pages and change tracking as Markdown",
+  "description": "Give your coding agent safe, read-only access to Jira and Confluence: issues and wiki pages as Markdown files, with a Claude Code skill",
   "license": "MIT",
   "engines": {
     "node": ">=23.8"
@@ -40,6 +40,7 @@
     "atlassian",
     "markdown",
     "cli",
+    "ai-agent",
     "claude-code"
   ]
 }
