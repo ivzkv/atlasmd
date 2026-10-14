@@ -149,17 +149,27 @@ atlasmd track --remove PROJ-456                     # зняти з нагляд
 ## Розробка
 
 ```
-npm install                  # заодно збирає dist/ (prepare); у проєктах через npm link зміни видно після npm run build
-npm run dev -- issue X-1     # запуск із src/*.ts без збірки (нативне стирання типів Node)
+npm install                    # заодно збирає dist/ (prepare); у проєктах через npm link зміни видно після npm run build
+npm run dev -- jira issue X-1  # запуск із src/*.ts без збірки (нативне стирання типів Node)
 npm run typecheck
-npm run build                # dist/ — те, що запускає bin/atlasmd.js
+npm run build                  # dist/ — те, що запускає bin/atlasmd.js
 ```
 
-Версії — git-теги `vX.Y.Z`, і `version` у package.json має з ними збігатися (саме її друкують `atlasmd version`
-і `probe`). Реліз: `npm version minor` (або `patch` / `major` — піднімає версію, комітить і ставить тег) →
-`git push --follow-tags`. У проєктах: `"atlasmd": "git+https://…/atlasmd.git#semver:^1.0.0"`; оновлення —
-`npm update atlasmd`, `npx --no atlasmd skill`, коміт package-lock.json і skill. Ламаючі зміни (команди, формат
-`.jira/.env`) — лише в новій major-версії.
+## Релізи
+
+Версії — git-теги `vX.Y.Z`; `version` у package.json — те, що друкують `atlasmd version` і `probe`. Теги створює CI,
+вручну їх не ставити:
+
+```
+npm version minor --no-git-tag-version    # або patch / major; оновлює package.json і package-lock.json
+git commit -am "Release 1.1.0" && git push
+git push origin main:release              # .github/workflows/release.yml: перевірки → тег v1.1.0 + GitHub Release
+```
+
+Workflow падає, нічого не публікуючи, якщо тег уже є (версію не підняли) або перевірки не пройшли. У проєктах:
+`"atlasmd": "git+https://github.com/ivzkv/atlasmd.git#semver:^1.0.0"`; оновлення — `npm update atlasmd`,
+`npx --no atlasmd skill`, коміт package-lock.json і skill. Ламаючі зміни (команди, формат `.jira/.env`) — лише в новій
+major-версії.
 
 ## Ліцензія
 

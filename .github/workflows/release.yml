@@ -1,0 +1,68 @@
+name: Release
+
+# A push to the `release` branch publishes the version from package.json:
+# checks (typecheck, build, CLI smoke test, package contents) → tag vX.Y.Z on the pushed commit + a GitHub Release
+# with generated notes. Bump the version before pushing (npm version <patch|minor|major> --no-git-tag-version);
+# if the tag already exists the run fails and nothing is published.
+
+on:
+  push:
+    branches: [release]
+
+permissions:
+  contents: write # create the tag and the release
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # all tags, to check whether this version is already released
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Read the version
+        id: version
+        run: |
+          version=$(node -p "require('./package.json').version")
+          lock=$(node -p "require('./package-lock.json').version")
+          if [ "$version" != "$lock" ]; then
+            echo "::error::package.json ($version) and package-lock.json ($lock) versions differ — bump with npm version"
+            exit 1
+          fi
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+
+      - name: Fail if this version is already released
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+            echo "::error::$TAG already exists — bump the version (npm version <patch|minor|major> --no-git-tag-version), commit, push again"
+            exit 1
+          fi
+
+      - run: npm ci # also builds dist/ (prepare)
+      - run: npm run typecheck
+      - name: CLI smoke test
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          out=$(node bin/atlasmd.js version)
+          echo "$out"
+          [ "$out" = "atlasmd $TAG" ] || { echo "::error::expected 'atlasmd $TAG', got '$out'"; exit 1; }
+      - name: Package contents
+        run: npm pack --dry-run
+
+      - name: Tag and create the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: gh release create "$TAG" --target "$GITHUB_SHA" --title "$TAG" --generate-notes

@@ -148,15 +148,25 @@ Dynamic parts of the Jira macro in wiki pages (issue title/status) are ignored w
 ## Development
 
 ```
-npm install                  # also builds dist/ (prepare); linked projects see changes after npm run build
-npm run dev -- issue X-1     # run from src/*.ts without building (Node's native type stripping)
+npm install                    # also builds dist/ (prepare); linked projects see changes after npm run build
+npm run dev -- jira issue X-1  # run from src/*.ts without building (Node's native type stripping)
 npm run typecheck
-npm run build                # dist/ — what bin/atlasmd.js runs
+npm run build                  # dist/ — what bin/atlasmd.js runs
 ```
 
-Versions are git tags `vX.Y.Z`, and `version` in package.json must match them (it is what `atlasmd version` and
-`probe` print). Release: `npm version minor` (or `patch` / `major` — bumps the version, commits and tags) →
-`git push --follow-tags`. In projects: `"atlasmd": "git+https://…/atlasmd.git#semver:^1.0.0"`; to update —
+## Releases
+
+Versions are git tags `vX.Y.Z`; `version` in package.json is what `atlasmd version` and `probe` print. Tags are
+created by CI — do not tag by hand:
+
+```
+npm version minor --no-git-tag-version    # or patch / major; updates package.json and package-lock.json
+git commit -am "Release 1.1.0" && git push
+git push origin main:release              # .github/workflows/release.yml: checks → tag v1.1.0 + GitHub Release
+```
+
+The workflow fails without publishing anything if the tag already exists (the version was not bumped) or the checks
+fail. In projects: `"atlasmd": "git+https://github.com/ivzkv/atlasmd.git#semver:^1.0.0"`; to update —
 `npm update atlasmd`, `npx --no atlasmd skill`, commit package-lock.json and the skill. Breaking changes (commands,
 `.jira/.env` format) only in a new major version.
 
