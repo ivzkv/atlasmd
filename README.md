@@ -56,6 +56,17 @@ node .atlasmd/tool/bin/atlasmd.js probe
 4. fill in your URLs and token in `.atlasmd/.env`;
 5. check access.
 
+Or let your agent do it — tell it:
+
+```
+Download https://raw.githubusercontent.com/ivzkv/atlasmd/vX.Y.Z/skills/atlasmd/SKILL.md
+to .claude/skills/atlasmd/SKILL.md and follow its "First-time setup" section.
+```
+
+The skill walks it through the same steps and adds the rule that keeps it away from the tokens. Fetching the tool
+runs code from GitHub, so the agent may need your permission for it: if it is not allowed, the agent gives you the
+two commands to run yourself, or the rules to allow exactly those commands.
+
 `vX.Y.Z` is a release tag (see [Releases](https://github.com/ivzkv/atlasmd/releases)). Nothing is installed in the
 project itself — no package.json or node_modules in its root: the tool lives in `.atlasmd/tool/` (out of git), and
 `.atlasmd/version` (one line, e.g. `1.0.3`) pins its version. Commit `.atlasmd/version`, `.atlasmd/.gitignore` and the skill:

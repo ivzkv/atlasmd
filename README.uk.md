@@ -59,6 +59,17 @@ node .atlasmd/tool/bin/atlasmd.js probe
 4. вписати свої URL і токен у `.atlasmd/.env`;
 5. перевірити доступ.
 
+Або доручіть це агенту — напишіть йому:
+
+```
+Завантаж https://raw.githubusercontent.com/ivzkv/atlasmd/vX.Y.Z/skills/atlasmd/SKILL.md
+у .claude/skills/atlasmd/SKILL.md і виконай його розділ "First-time setup".
+```
+
+Skill проведе його тими самими кроками й додасть правило, що закриває агенту доступ до токенів. Завантаження
+інструмента запускає код із GitHub, тож агенту може знадобитися ваш дозвіл: якщо його немає, агент дасть дві команди,
+щоб ви запустили їх самі, або правила, що дозволяють саме ці команди.
+
 `vX.Y.Z` — тег релізу (див. [Releases](https://github.com/ivzkv/atlasmd/releases)). У сам проєкт нічого не ставиться —
 ні package.json, ні node_modules у його корені: інструмент лежить у `.atlasmd/tool/` (поза git), а `.atlasmd/version`
 (один рядок, напр. `1.0.3`) закріплює його версію. Закомітьте `.atlasmd/version`, `.atlasmd/.gitignore` і skill: у всіх

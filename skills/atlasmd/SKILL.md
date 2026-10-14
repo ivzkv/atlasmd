@@ -1,6 +1,6 @@
 ---
 name: atlasmd
-description: Read Jira tickets and Confluence pages through the read-only atlasmd CLI. Use when asked (in any language) to study, find, load or track Jira issues or Confluence/wiki pages, or to see what changed in an issue or page.
+description: Read Jira tickets and Confluence pages through the read-only atlasmd CLI. Use when asked (in any language) to study, find, load or track Jira issues or Confluence/wiki pages, or to see what changed in an issue or page, or to set up atlasmd in a project.
 ---
 
 # atlasmd — read-only Jira / Confluence
@@ -46,7 +46,24 @@ npm ci --omit=dev --ignore-scripts --prefix .atlasmd/tool
 
 If the tool warns that `.atlasmd/version` pins another version than the one running, delete `.atlasmd/tool/` and fetch again the same way. Do not install atlasmd with npm, do not change files inside `.atlasmd/tool/`, and do not fetch from any other source. If the fetch fails (no network, no access to github.com, the tag does not exist), stop and tell the user.
 
-If `.atlasmd/version` does not exist, the project is not connected — stop and tell the user (setup is described in the atlasmd README).
+If running these commands is not allowed (a declined permission prompt, a security check, a sandbox), do not look for a workaround — no other source, no copying files by hand. Give the user both commands with the version filled in to run themselves (in Claude Code: each prefixed with `!`), or offer these rules for `permissions.allow` in `.claude/settings.local.json`:
+
+```
+"Bash(git -c advice.detachedHead=false clone -q --depth 1 --branch v<version> https://github.com/ivzkv/atlasmd.git .atlasmd/tool)",
+"Bash(npm ci --omit=dev --ignore-scripts --prefix .atlasmd/tool)"
+```
+
+If `.atlasmd/version` does not exist, the project is not connected: if the user asked to set up atlasmd, follow "First-time setup" below; otherwise stop and tell them.
+
+## First-time setup
+
+Usually the user has asked you to download this file into `.claude/skills/atlasmd/SKILL.md` and follow this section. Run everything from the project root.
+
+1. Version: the tag in the URL this file came from (`…/atlasmd/v1.0.3/skills/…` → `1.0.3`). If you do not know it, ask the user — do not choose one yourself. Write it to `.atlasmd/version` (one line).
+2. Fetch `.atlasmd/tool/` as described in "Version and fetching" above.
+3. Run `init`: it creates `.atlasmd/.env` from a template and `.atlasmd/.gitignore`, and rewrites this file with the text of the fetched version — read it again afterwards.
+4. In the project's `.claude/settings.json` (create it if missing, keep the existing rules) add `"permissions": { "deny": ["Read(/.atlasmd/.env*)", "Edit(/.atlasmd/.env*)"] }`.
+5. Ask the user to fill in `.atlasmd/.env` themselves (do not read or edit it), then run `probe`. Suggest committing `.atlasmd/version`, `.atlasmd/.gitignore`, `.claude/skills/atlasmd/SKILL.md` and `.claude/settings.json`.
 
 To move the project to another version — only when the user asks: write the new version to `.atlasmd/version`, delete `.atlasmd/tool/`, fetch, then run the `skill` command (it updates this file to that version's text). Changes in `.atlasmd/version` and this file show in the project's diff.
 
