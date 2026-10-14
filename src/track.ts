@@ -6,7 +6,7 @@
 //   - Confluence: page version number, the version list (who/when/version message) and a diff between two
 //     versions fetched from Confluence itself (status=historical) — so changes to our Markdown converter
 //     do not produce false differences; comments (version, resolution) and attachments (version).
-// Snapshot of the previous run — .jira/out/track/state.json, reports — .jira/out/track/reports/.
+// Snapshot of the previous run — .atlasmd/out/track/state.json, reports — .atlasmd/out/track/reports/.
 
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -492,7 +492,7 @@ export async function track(jira: RestClient, wiki: RestClient | undefined, opts
   }
   const explicitPages: string[] = [];
   if (opts.pages.length) {
-    if (!wiki) throw new Error('--page needs CONFLUENCE_BASE_URL / CONFLUENCE_TOKEN in .jira/.env');
+    if (!wiki) throw new Error('--page needs CONFLUENCE_BASE_URL / CONFLUENCE_TOKEN in .atlasmd/.env');
     for (const p of opts.pages) explicitPages.push(await resolvePageId(wiki, p));
   }
   const checkAll = !keys.length && !opts.jql && !explicitPages.length;
@@ -539,7 +539,7 @@ export async function track(jira: RestClient, wiki: RestClient | undefined, opts
   }
 
   const pageIds = new Set([...pageRefs.keys(), ...explicitPages, ...(checkAll ? Object.keys(state.pages) : [])]);
-  if (pageIds.size && !wiki) failed.push(`Wiki pages (${pageIds.size}) skipped: Confluence is not configured in .jira/.env`);
+  if (pageIds.size && !wiki) failed.push(`Wiki pages (${pageIds.size}) skipped: Confluence is not configured in .atlasmd/.env`);
   if (wiki) {
     for (const id of pageIds) {
       process.stderr.write(`… wiki ${id}\n`);

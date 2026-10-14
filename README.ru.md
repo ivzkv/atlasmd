@@ -17,16 +17,16 @@ atlasmd — небольшой CLI, который превращает тике
   не опасаясь, что он закроет тикет или изменит страницу.
 - **Markdown, а не JSON.** Тикет или страница становится чистым Markdown — таблицы, код, упоминания по именам,
   комментарии с авторами и датами — вместо тысяч токенов сырого REST-ответа.
-- **Файлы, к которым агент может вернуться.** Всё сохраняется по предсказуемым путям (`.jira/out/<KEY>/<KEY>.md`),
+- **Файлы, к которым агент может вернуться.** Всё сохраняется по предсказуемым путям (`.atlasmd/out/<KEY>/<KEY>.md`),
   так что агент перечитывает файл, а не повторяет запрос.
 - **Картинки и вложения — локально.** Изображения скачиваются и подставляются относительными ссылками, так что
   мультимодальный агент их видит; вложения `.docx` конвертируются в `.md`.
 - **Секреты не попадают в контекст.** Токены никогда не печатаются; skill и правило запрета не подпускают агента
-  к `.jira/.env`.
+  к `.atlasmd/.env`.
 - **Падает сразу, без повторов.** На 401, CAPTCHA или редирект на SSO останавливается сразу — агент в цикле
   не заблокирует учётную запись повторными попытками.
 - **Ошибки подсказывают следующий шаг.** В ошибке — точный путь и команда, которую нужно выполнить
-  (`… or create it: npx -y github:ivzkv/atlasmd#vX.Y.Z init`), так что агент исправляется сам.
+  (`… or create it: node .atlasmd/tool/bin/atlasmd.js init`), так что агент исправляется сам.
 - **«Что изменилось?» — из коробки.** `track` показывает, что изменилось в тикетах и связанных страницах wiki
   с прошлого запуска или с даты — готовый ответ на один из самых частых вопросов.
 - **Собственный skill для Claude Code.** Инструкции для агента идут вместе с пакетом, соответствуют его версии,
@@ -37,64 +37,72 @@ atlasmd — небольшой CLI, который превращает тике
 ```
 > что в PROJ-123 и что изменилось со вчера?
 
-$ npx -y github:ivzkv/atlasmd#vX.Y.Z jira issue PROJ-123
-$ npx -y github:ivzkv/atlasmd#vX.Y.Z track PROJ-123 --since 2026-10-13
-→ агент читает .jira/out/PROJ-123/PROJ-123.md и отчёт track и отвечает
+$ node .atlasmd/tool/bin/atlasmd.js jira issue PROJ-123
+$ node .atlasmd/tool/bin/atlasmd.js track PROJ-123 --since 2026-10-13
+→ агент читает .atlasmd/out/PROJ-123/PROJ-123.md и отчёт track и отвечает
 ```
 
 ## Быстрый старт
 
-Нужен Node ≥ 23.8. Из корня вашего проекта:
+Нужны Node ≥ 23.8, git и npm. Из корня вашего проекта:
 
 ```
-npx -y github:ivzkv/atlasmd#vX.Y.Z init    # 1. создать .jira/.env, закрепить vX.Y.Z в .jira/version, поставить skill
-                                         # 2. вписать свои URL и токен в .jira/.env
-npx -y github:ivzkv/atlasmd#vX.Y.Z probe   # 3. проверить доступ
+git -c advice.detachedHead=false clone -q --depth 1 --branch vX.Y.Z https://github.com/ivzkv/atlasmd.git .atlasmd/tool
+npm ci --omit=dev --ignore-scripts --prefix .atlasmd/tool
+node .atlasmd/tool/bin/atlasmd.js init
+node .atlasmd/tool/bin/atlasmd.js probe
 ```
 
-`vX.Y.Z` — тег релиза (см. [Releases](https://github.com/ivzkv/atlasmd/releases)). В проект ничего не ставится —
-ни package.json, ни node_modules: npx при первом запуске скачивает этот тег с GitHub (нужен `git`) и кэширует.
-Версия закреплена в `.jira/version` (одна строка, напр. `1.0.2`); skill велит Claude прочитать её и запускать этот тег.
-Закоммитьте `.jira/version`, `.jira/.gitignore` и skill: у всех в проекте будет одна версия, каждый один раз
-запускает `init` и вписывает свой токен. Всегда указывайте репозиторий и тег — просто `npx atlasmd` скачает из
-публичного npm любой пакет с таким именем.
+1. скачать исходники тега `vX.Y.Z` в `.atlasmd/tool/`;
+2. поставить туда их runtime-зависимости (без сборки: исходники запускаются напрямую через стирание типов Node);
+3. создать `.atlasmd/.env`, закрепить `vX.Y.Z` в `.atlasmd/version`, поставить skill;
+4. вписать свои URL и токен в `.atlasmd/.env`;
+5. проверить доступ.
 
-Настройки и результаты лежат в проекте, а не в пакете; у `.jira/` свой `.gitignore`, который держит вне git всё,
-кроме закреплённой версии (`.gitignore` проекта править не нужно):
+`vX.Y.Z` — тег релиза (см. [Releases](https://github.com/ivzkv/atlasmd/releases)). В сам проект ничего не ставится —
+ни package.json, ни node_modules в его корне: инструмент лежит в `.atlasmd/tool/` (вне git), а `.atlasmd/version`
+(одна строка, напр. `1.0.3`) закрепляет его версию. Закоммитьте `.atlasmd/version`, `.atlasmd/.gitignore` и skill: у всех
+в проекте будет одна версия — `.atlasmd/tool/` Claude скачает сам при первом использовании (шаги 1–2, они описаны
+в skill), — а каждый один раз запускает `init` и вписывает свой токен.
+
+Всё лежит в проекте; у `.atlasmd/` свой `.gitignore`, который держит вне git всё, кроме закреплённой версии
+(`.gitignore` проекта править не нужно):
 
 ```
-<корень проекта>/.jira/version  закреплённая версия    (в git)
-<корень проекта>/.jira/.env     URL и токены           (другой путь — JIRA_ENV_FILE)
-<корень проекта>/.jira/out/     тикеты, wiki, track    (другой путь — JIRA_OUT_DIR)
+<корень проекта>/.atlasmd/version  закреплённая версия    (в git)
+<корень проекта>/.atlasmd/tool/    инструмент этой версии (каждый скачивает сам)
+<корень проекта>/.atlasmd/.env     URL и токены           (другой путь — JIRA_ENV_FILE)
+<корень проекта>/.atlasmd/out/     тикеты, wiki, track    (другой путь — JIRA_OUT_DIR)
 ```
 
-Инструмент берёт `.jira/` только в текущей папке и вверх не ищет — запускайте из корня проекта (из другой папки —
+Инструмент берёт `.atlasmd/` только в текущей папке и вверх не ищет — запускайте из корня проекта (из другой папки —
 ошибка с точным путём). `probe` печатает, какие файлы использованы.
 
 ## Использование с Claude Code
 
-- `skill` (делает и `init`) закрепляет за проектом версию, которая его запустила (`.jira/version`), и ставит
+- `skill` (делает и `init`) закрепляет за проектом версию, которая его запустила (`.atlasmd/version`), и ставит
   `.claude/skills/atlasmd/SKILL.md` этой версии. Skill объясняет Claude, когда и как пользоваться инструментом, что
   делать при сбоях и чего не трогать никогда. Версии в нём нет — это `skills/atlasmd/SKILL.md` из этого репозитория
   как есть, поэтому в проекте он меняется, только когда меняется его текст здесь.
-- Перевести проект на другую версию: `npx -y github:ivzkv/atlasmd#v<новая версия> skill` и закоммитить diff;
-  `probe` печатает закреплённую версию и совпадает ли skill с запущенной версией.
+- Перевести проект на другую версию (или попросить об этом Claude): вписать её в `.atlasmd/version`, удалить
+  `.atlasmd/tool/`, скачать заново (шаги 1–2), запустить `skill`, закоммитить diff. Пока копия не скачана заново,
+  каждая команда предупреждает, что закреплённая и запущенная версии разные; `probe` печатает обе и совпадает ли skill.
 - Запретить Claude доступ к токенам в `.claude/settings.json` проекта:
-  `"permissions": { "deny": ["Read(/.jira/.env*)", "Edit(/.jira/.env*)"] }`. `skill` напомнит, если правила нет.
+  `"permissions": { "deny": ["Read(/.atlasmd/.env*)", "Edit(/.atlasmd/.env*)"] }`. `skill` напомнит, если правила нет.
 
 Другие агенты могут пользоваться теми же командами — подойдёт любой агент, который умеет запускать команду
 в shell и читать файл.
 
 ## Команды
 
-`atlasmd` ниже — сокращение для `npx -y github:ivzkv/atlasmd#vX.Y.Z` (`X.Y.Z` — из `.jira/version` проекта).
+`atlasmd` ниже — сокращение для `node .atlasmd/tool/bin/atlasmd.js` (запуск из корня проекта).
 
 ```
-atlasmd jira issue PROJ-123                         # тикет: поля, описание, комментарии, ссылки (в т.ч. на wiki) → stdout и .jira/out/PROJ-123/PROJ-123.md;
+atlasmd jira issue PROJ-123                         # тикет: поля, описание, комментарии, ссылки (в т.ч. на wiki) → stdout и .atlasmd/out/PROJ-123/PROJ-123.md;
                                                     #   картинки тикета скачиваются и видны в .md (в описании/комментариях — на своих местах)
 atlasmd jira issue PROJ-123 --attachments           # то же + все вложения рядом, в .md — ссылки на них (.docx → ещё и .md)
 atlasmd jira search "project = PROJ AND resolution = Unresolved" 50
-atlasmd jira attachments PROJ-123                   # вложения в .jira/out/PROJ-123/, .docx → ещё и .md (картинки из .docx — файлами рядом)
+atlasmd jira attachments PROJ-123                   # вложения в .atlasmd/out/PROJ-123/, .docx → ещё и .md (картинки из .docx — файлами рядом)
 
 atlasmd wiki page 123456                            # страница wiki → Markdown + комментарии (inline с выделенным текстом)
 atlasmd wiki page "https://wiki.example.com/spaces/SPACE/pages/123456/..." --attachments   # изображения страницы скачиваются всегда, --attachments — остальные вложения
@@ -104,14 +112,14 @@ atlasmd wiki search "title ~ release" --cql          # CQL распознаёт�
 
 atlasmd probe                                       # версия, пользователь, права, проекты, доски, поля, вложения, Confluence
 atlasmd docx "<путь>.docx"                          # локальный .docx → .md рядом (напр. ТЗ из архивов вложений)
-atlasmd init                                        # подключить проект: .jira/.env, .jira/.gitignore, skill для Claude Code
+atlasmd init                                        # подключить проект: .atlasmd/.env, .atlasmd/.gitignore, skill для Claude Code
 atlasmd skill                                       # установить / обновить .claude/skills/atlasmd/SKILL.md из этой версии
-atlasmd version                                     # версия инструмента (есть и в первой строке probe); не --version: его перехватывает npx
+atlasmd version                                     # версия инструмента (есть и в первой строке probe)
 ```
 
 `atlasmd jira` или `atlasmd wiki` без подкоманды показывает команды своей группы. `wiki page` принимает pageId,
 `viewpage.action?pageId=…`, `/spaces/X/pages/<id>/…` или `/display/SPACE/Title`; результат — в stdout и в
-`.jira/out/wiki/<pageId>/`.
+`.atlasmd/out/wiki/<pageId>/`.
 
 Даты: в выводе есть даты создания и правки комментариев, версии и даты вложений wiki. Скачанные файлы получают
 на диске реальную дату из Jira (дата загрузки вложения) / Confluence (дата версии), а не момент скачивания.
@@ -137,7 +145,7 @@ atlasmd track --remove PROJ-456                     # снять с наблюд
   пословно «было → стало» для правок внутри длинных строк; комментарии новые / изменённые / resolved↔open / удалённые;
   вложения новые / новая версия / удалённые.
 
-Снимок — `.jira/out/track/state.json`, отчёты — `.jira/out/track/reports/<дата_время>.md`.
+Снимок — `.atlasmd/out/track/state.json`, отчёты — `.atlasmd/out/track/reports/<дата_время>.md`.
 Динамические вставки макроса Jira в страницах wiki (название/статус тикета) при сравнении игнорируются.
 
 ### Ограничения
@@ -152,7 +160,7 @@ atlasmd track --remove PROJ-456                     # снять с наблюд
 
 ## Настройка
 
-`.jira/.env` (создаёт `init` из [env.example](env.example)) — один из вариантов; для Jira и Confluence
+`.atlasmd/.env` (создаёт `init` из [env.example](env.example)) — один из вариантов; для Jira и Confluence
 могут быть разные:
 
 - **Server/DC:** `JIRA_BASE_URL` + `JIRA_TOKEN`, `CONFLUENCE_BASE_URL` + `CONFLUENCE_TOKEN` — отдельные PAT из профилей
@@ -192,11 +200,11 @@ JQL-поиск через `/rest/api/3/search/jql` (старый `/rest/api/2/se
 npm install                    # заодно собирает dist/ (prepare)
 npm run dev -- jira issue X-1  # запуск из src/*.ts без сборки (нативное стирание типов Node)
 npm run typecheck
-npm run build                  # dist/ — то, что запускает bin/atlasmd.js
+npm run build                  # dist/ — собранный пакет; копия исходников (этот репозиторий, .atlasmd/tool) запускает src/ напрямую
 ```
 
-Чтобы попробовать локальные изменения в проекте, запустите рабочую копию из корня проекта после `npm run build`
-(skill проекта по-прежнему указывает на свой тег):
+Чтобы попробовать локальные изменения в проекте, запустите рабочую копию из корня проекта (она запускает `src/`
+напрямую, без сборки; `.atlasmd/tool/` проекта остаётся как есть):
 
 ```
 node <путь к atlasmd>/bin/atlasmd.js jira issue X-1
@@ -217,7 +225,7 @@ git push origin main:release              # .github/workflows/release.yml: пр�
 ```
 
 Workflow падает, ничего не публикуя, если тег уже есть (версию не подняли) или проверки не прошли. В проектах:
-`npx -y github:ivzkv/atlasmd#v<новая версия> skill`, коммит `.jira/version` и skill. Ломающие изменения (команды, формат `.jira/.env`) — только
+новая версия в `.atlasmd/version`, заново скачать `.atlasmd/tool/`, `skill`, коммит `.atlasmd/version` и skill. Ломающие изменения (команды, формат `.atlasmd/.env`) — только
 в новой major-версии.
 
 ## Лицензия

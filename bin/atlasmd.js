@@ -15,12 +15,16 @@ if (minMajor !== undefined && (major < minMajor || (major === minMajor && minor 
   process.exit(1);
 }
 
+// A source checkout (the copy a project fetches into .atlasmd/tool, or the repo itself) runs src/*.ts directly through
+// Node's native type stripping, no build needed; a built package ships only dist/.
+const src = fileURLToPath(new URL('../src/cli.ts', import.meta.url));
 const dist = fileURLToPath(new URL('../dist/cli.js', import.meta.url));
-if (!existsSync(dist)) {
-  console.error('⛔ dist/cli.js is missing — build the package: npm run build');
+const entry = existsSync(src) ? src : dist;
+if (!existsSync(entry)) {
+  console.error('⛔ neither src/cli.ts nor dist/cli.js found — fetch the tool again or build it: npm run build');
   process.exit(1);
 }
-const r = spawnSync(process.execPath, ['--use-system-ca', dist, ...process.argv.slice(2)], { stdio: 'inherit' });
+const r = spawnSync(process.execPath, ['--use-system-ca', entry, ...process.argv.slice(2)], { stdio: 'inherit' });
 if (r.error) {
   console.error(`⛔ ${r.error.message}`);
   process.exit(1);

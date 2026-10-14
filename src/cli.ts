@@ -1,21 +1,20 @@
 // Read-only CLI for Jira and Confluence. Output is Markdown on stdout (easy to read for both humans and Claude).
-// Usage:  npx -y github:ivzkv/atlasmd#vX.Y.Z <command> [args]   (the project pins the version in .jira/version, see package.ts;
-//         settings and results live in the project's .jira/, see paths.ts)
-//   version               tool version (from its package.json); --version / -v too, but through npx only after --,
-//                         because npx intercepts them and prints npm's own version
-//   init                  set up the current folder: .jira/.env from the template, then the same as `skill`
-//   skill                 pin the project to this version (.jira/version, committed; .jira/.gitignore keeps the rest
+// Usage:  node .atlasmd/tool/bin/atlasmd.js <command> [args]   (the project's copy of the pinned version, see package.ts;
+//         settings and results live in the project's .atlasmd/, see paths.ts)
+//   version               tool version (from its package.json); --version / -v too
+//   init                  set up the current folder: .atlasmd/.env from the template, then the same as `skill`
+//   skill                 pin the project to this version (.atlasmd/version, committed; .atlasmd/.gitignore keeps the rest
 //                         out of git) and install its Claude Code skill .claude/skills/atlasmd/SKILL.md
 //   probe                 what the tokens can do: version, user, permissions, projects, boards, fields, attachments, Confluence
 //   docx <file.docx>…     local .docx → .md next to it
 //
 //   jira issue <KEY> [--attachments]
-//                         full issue → stdout and .jira/out/<KEY>/<KEY>.md; images are downloaded and shown in the .md,
+//                         full issue → stdout and .atlasmd/out/<KEY>/<KEY>.md; images are downloaded and shown in the .md,
 //                         with --attachments the other attachments too (.docx → also .md)
 //   jira search "<JQL>" [N]
 //                         issue search, N results (default 20)
 //   jira attachments <KEY>
-//                         download all issue attachments to .jira/out/<KEY>/ (.docx also to .md)
+//                         download all issue attachments to .atlasmd/out/<KEY>/ (.docx also to .md)
 //
 //   wiki page <pageId|URL> [--attachments]
 //                         Confluence page as Markdown + comments (inline too) + attachments
@@ -28,7 +27,7 @@
 //                         without arguments — everything already tracked
 
 import { CONFIG_DIR, ENV_FILE, OUT_DIR, VERSION_FILE, envHint } from './paths.ts';
-import { RUN, VERSION } from './package.ts';
+import { RUN, VERSION, fetchCommands } from './package.ts';
 import { existsSync, readFileSync } from 'node:fs';
 import { copyFile, mkdir, stat, writeFile } from 'node:fs/promises';
 import { join, dirname, resolve } from 'node:path';
@@ -186,7 +185,7 @@ function valueToText(v: Json): string | undefined {
 }
 
 /**
- * Issue → stdout and .jira/out/<KEY>/<KEY>.md. Description and comments come from renderedFields (Jira HTML → Markdown,
+ * Issue → stdout and .atlasmd/out/<KEY>/<KEY>.md. Description and comments come from renderedFields (Jira HTML → Markdown,
  * like wiki pages): headings, lists, tables, code, mentions as names. Issue images are always downloaded (so they show
  * in the .md), other attachments with withAll (--attachments); attachment links point to the local files.
  */
@@ -346,7 +345,7 @@ const isImageAttachment = (a: Json) =>
   /^image\//.test(a.mimeType ?? '') || /\.(png|jpe?g|gif|bmp|svg|webp)$/i.test(a.filename ?? '');
 
 interface LocalAttachment {
-  /** File name in .jira/out/<KEY>/ */
+  /** File name in .atlasmd/out/<KEY>/ */
   name: string;
   /** For .docx — name of the converted .md */
   md?: string;
@@ -417,7 +416,7 @@ function parseTrackArgs(args: string[]): TrackOptions {
 
 // ---------- init ----------
 
-/** .jira/ in the current folder: .env from env.example (an existing one is kept), then the same as `skill`. */
+/** .atlasmd/ in the current folder: .env from env.example (an existing one is kept), then the same as `skill`. */
 async function init() {
   await mkdir(CONFIG_DIR, { recursive: true });
   const env = join(CONFIG_DIR, '.env');
@@ -432,15 +431,15 @@ async function init() {
 
 // ---------- skill ----------
 
-// The project pins the tool version in .jira/version (committed). The skill holds no version: it is the package's
-// skills/atlasmd/SKILL.md as is (plus a footer) and tells Claude to read .jira/version, so in a project it changes only
-// when its text changes in atlasmd. `skill`, run from some version, pins the project to it and installs that version's
-// skill; both changes show in the project's diff. Writes only to the current folder.
+// The project pins the tool version in .atlasmd/version (committed) and keeps that tag's source in .atlasmd/tool (not in git).
+// The skill holds no version: it is the package's skills/atlasmd/SKILL.md as is (plus a footer), so in a project it
+// changes only when its text changes in atlasmd. `skill`, run from some version, pins the project to it and installs that
+// version's skill; both changes show in the project's diff. Writes only to the current folder.
 const SKILL_SRC = new URL('../skills/atlasmd/SKILL.md', import.meta.url);
 const SKILL_DST = resolve('.claude', 'skills', 'atlasmd', 'SKILL.md');
 
-// Everything in .jira/ stays out of git except the version pin; the .gitignore itself is committed so the rule reaches every clone
-const JIRA_GITIGNORE = '# atlasmd: tokens and downloaded issues stay out of git; only the version pin is shared\n*\n!.gitignore\n!version\n';
+// Everything in .atlasmd/ stays out of git except the version pin; the .gitignore itself is committed so the rule reaches every clone
+const CONFIG_GITIGNORE = '# atlasmd: tokens and downloaded issues stay out of git; only the version pin is shared\n*\n!.gitignore\n!version\n';
 
 // Compare ignoring CRLF/LF: git on Windows may convert line endings in either file
 const normalize = (s: string) => s.replace(/\r\n/g, '\n');
@@ -453,24 +452,28 @@ function skillText(): string {
 
 const pinnedVersion = () => readText(VERSION_FILE)?.trim() || undefined;
 
+/** What to do when the pin and the running copy differ: fetch the pinned version, or pin the running one. */
+const mismatchHint = (pinned: string) =>
+  `to run v${pinned}: delete .atlasmd/tool, then ${fetchCommands(pinned)}; to pin v${VERSION} instead: ${RUN} skill`;
+
 /** For probe: the project's pin and skill compared with the running version. */
 function setupStatus(): string {
   const pinned = pinnedVersion();
   const pin = !pinned
     ? `not pinned (${VERSION_FILE} missing) — ${RUN} skill`
-    : pinned === VERSION ? `v${pinned}` : `v${pinned}, while v${VERSION} is running — to move the project to it: ${RUN} skill`;
+    : pinned === VERSION ? `v${pinned}` : `v${pinned}, while v${VERSION} is running — ${mismatchHint(pinned)}`;
   const skill = readText(SKILL_DST);
   const state = skill === undefined ? `not installed — ${RUN} skill` : skill === skillText() ? 'matches' : `differs from this version — ${RUN} skill`;
   return `version ${pin}; skill ${state}`;
 }
 
-/** Pins the project to the running version (.jira/version), installs its skill and keeps .jira/.gitignore current. */
+/** Pins the project to the running version (.atlasmd/version), installs its skill and keeps .atlasmd/.gitignore current. */
 async function useThisVersion() {
   await mkdir(CONFIG_DIR, { recursive: true });
   const ignore = join(CONFIG_DIR, '.gitignore');
-  if (readText(ignore) !== JIRA_GITIGNORE) {
-    await writeFile(ignore, JIRA_GITIGNORE);
-    out(`- ${ignore}: .jira/ stays out of git except the version pin`);
+  if (readText(ignore) !== CONFIG_GITIGNORE) {
+    await writeFile(ignore, CONFIG_GITIGNORE);
+    out(`- ${ignore}: .atlasmd/ stays out of git except the version pin`);
   }
   const pinned = pinnedVersion();
   if (pinned !== VERSION) await writeFile(VERSION_FILE, `${VERSION}\n`);
@@ -484,8 +487,8 @@ async function useThisVersion() {
   }
   // The project's settings.json is not touched (it holds other rules too) — only a reminder if the token deny rule is missing
   const settings = resolve('.claude', 'settings.json');
-  if (!existsSync(settings) || !readFileSync(settings, 'utf8').includes('.jira/.env')) {
-    out(`- ⚠️ ${settings}: no rule denying access to the tokens — add to "permissions": { "deny": ["Read(/.jira/.env*)", "Edit(/.jira/.env*)"] }`);
+  if (!existsSync(settings) || !readFileSync(settings, 'utf8').includes('.atlasmd/.env')) {
+    out(`- ⚠️ ${settings}: no rule denying access to the tokens — add to "permissions": { "deny": ["Read(/.atlasmd/.env*)", "Edit(/.atlasmd/.env*)"] }`);
   }
 }
 
@@ -560,6 +563,11 @@ async function wikiCommand(sub: string | undefined, args: string[]) {
 async function main() {
   const [cmd, sub, ...rest] = process.argv.slice(2);
   const args = process.argv.slice(3);
+  // .atlasmd/version was changed but the tool not fetched again: results would come from another version — say so on every run
+  const pinned = pinnedVersion();
+  if (pinned && pinned !== VERSION && !['init', 'skill', 'version', '--version', '-v'].includes(cmd)) {
+    console.error(`⚠️ ${VERSION_FILE} pins v${pinned}, but v${VERSION} is running — ${mismatchHint(pinned)}\n`);
+  }
   switch (cmd) {
     case 'jira':
       return jiraCommand(sub, rest);
