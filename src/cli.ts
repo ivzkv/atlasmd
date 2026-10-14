@@ -1,10 +1,11 @@
 // Read-only CLI for Jira and Confluence. Output is Markdown on stdout (easy to read for both humans and Claude).
-// Usage:  atlasmd <command> [args]   (settings and results live in the project's .jira/, see paths.ts)
+// Usage:  npx -y github:ivzkv/atlasmd#vX.Y.Z <command> [args]   (the project pins the version in .jira/version, see package.ts;
+//         settings and results live in the project's .jira/, see paths.ts)
 //   version               tool version (from its package.json); --version / -v too, but through npx only after --,
 //                         because npx intercepts them and prints npm's own version
-//   init                  set up the current folder: .jira/.env from the template + .jira/.gitignore (folder stays out of git)
-//                         + the Claude Code skill (same as `skill`)
-//   skill                 install / update .claude/skills/atlasmd/SKILL.md from this package version
+//   init                  set up the current folder: .jira/.env from the template, then the same as `skill`
+//   skill                 pin the project to this version (.jira/version, committed; .jira/.gitignore keeps the rest
+//                         out of git) and install its Claude Code skill .claude/skills/atlasmd/SKILL.md
 //   probe                 what the tokens can do: version, user, permissions, projects, boards, fields, attachments, Confluence
 //   docx <file.docx>…     local .docx → .md next to it
 //
@@ -26,7 +27,8 @@
 //                         changes in issues and linked wiki pages since the previous run (or a date);
 //                         without arguments — everything already tracked
 
-import { ENV_FILE, OUT_DIR, envHint } from './paths.ts';
+import { CONFIG_DIR, ENV_FILE, OUT_DIR, VERSION_FILE, envHint } from './paths.ts';
+import { RUN, VERSION } from './package.ts';
 import { existsSync, readFileSync } from 'node:fs';
 import { copyFile, mkdir, stat, writeFile } from 'node:fs/promises';
 import { join, dirname, resolve } from 'node:path';
@@ -37,9 +39,6 @@ import { probeConfluence, wikiPage, wikiSearch } from './confluence.ts';
 import { track, type TrackOptions } from './track.ts';
 
 type Json = any;
-
-// The package's package.json is one level up from both src/ (development) and dist/ (installed package)
-const VERSION: string = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
 
 const out = (line = '') => console.log(line);
 
@@ -65,7 +64,7 @@ async function probe(jira: RestClient) {
   out(`# Jira probe — ${jira.baseUrl} (atlasmd v${VERSION})`);
   out(`Auth: ${jira.authLabel}; platform: ${jira.cloud ? 'Cloud' : 'Server/DC'}`);
   out(`Settings: ${ENV_FILE}; results: ${OUT_DIR}`);
-  out(`Skill: ${SKILL_STATUS_TEXT[skillStatus()]}`);
+  out(`Project: ${setupStatus()}`);
 
   await section('Server', async () => {
     const info: Json = await jira.get('/rest/api/2/serverInfo');
@@ -418,56 +417,70 @@ function parseTrackArgs(args: string[]): TrackOptions {
 
 // ---------- init ----------
 
-/** .jira/ in the current folder: .gitignore with `*` (the whole folder stays out of git, no need to edit the project's .gitignore) and .env from env.example. */
+/** .jira/ in the current folder: .env from env.example (an existing one is kept), then the same as `skill`. */
 async function init() {
-  const dir = resolve('.jira');
-  await mkdir(dir, { recursive: true });
-  const exists = async (f: string) => !!(await stat(f).catch(() => undefined));
-  const ignore = join(dir, '.gitignore');
-  if (!(await exists(ignore))) await writeFile(ignore, '# atlasmd: tokens and downloaded issues — not for git\n*\n');
-  const env = join(dir, '.env');
-  if (await exists(env)) out(`- ${env} already exists — left untouched`);
+  await mkdir(CONFIG_DIR, { recursive: true });
+  const env = join(CONFIG_DIR, '.env');
+  if (existsSync(env)) out(`- ${env} already exists — left untouched`);
   else {
     await copyFile(fileURLToPath(new URL('../env.example', import.meta.url)), env);
     out(`- Created ${env} — fill in the URLs and tokens`);
   }
-  out(`- ${ignore}: the .jira/ folder stays out of git`);
-  await installSkill();
-  out('\nNext: npx --no atlasmd probe');
+  await useThisVersion();
+  out(`\nNext: ${RUN} probe`);
 }
 
 // ---------- skill ----------
 
-// The Claude Code skill ships in the package; the project gets a copy stamped with the version. After `npm update atlasmd`
-// one command (`skill`) updates the instructions for Claude, and the change shows in the project's diff. Writes only to the current folder.
+// The project pins the tool version in .jira/version (committed). The skill holds no version: it is the package's
+// skills/atlasmd/SKILL.md as is (plus a footer) and tells Claude to read .jira/version, so in a project it changes only
+// when its text changes in atlasmd. `skill`, run from some version, pins the project to it and installs that version's
+// skill; both changes show in the project's diff. Writes only to the current folder.
 const SKILL_SRC = new URL('../skills/atlasmd/SKILL.md', import.meta.url);
 const SKILL_DST = resolve('.claude', 'skills', 'atlasmd', 'SKILL.md');
-const SKILL_STATUS_TEXT = {
-  current: `up to date (v${VERSION})`,
-  outdated: `outdated or edited by hand — update: npx --no atlasmd skill`,
-  missing: `not installed — npx --no atlasmd skill`,
-};
+
+// Everything in .jira/ stays out of git except the version pin; the .gitignore itself is committed so the rule reaches every clone
+const JIRA_GITIGNORE = '# atlasmd: tokens and downloaded issues stay out of git; only the version pin is shared\n*\n!.gitignore\n!version\n';
 
 // Compare ignoring CRLF/LF: git on Windows may convert line endings in either file
 const normalize = (s: string) => s.replace(/\r\n/g, '\n');
+const readText = (file: string) => (existsSync(file) ? normalize(readFileSync(file, 'utf8')) : undefined);
 
 function skillText(): string {
   return `${normalize(readFileSync(SKILL_SRC, 'utf8')).trimEnd()}\n\n` +
-    `<!-- Generated by atlasmd v${VERSION} (npx --no atlasmd skill). Do not edit: the file is overwritten on update. -->\n`;
+    '<!-- Generated by atlasmd (`skill` command). Do not edit: the file is overwritten on update. -->\n';
 }
 
-function skillStatus(): keyof typeof SKILL_STATUS_TEXT {
-  if (!existsSync(SKILL_DST)) return 'missing';
-  return normalize(readFileSync(SKILL_DST, 'utf8')) === skillText() ? 'current' : 'outdated';
+const pinnedVersion = () => readText(VERSION_FILE)?.trim() || undefined;
+
+/** For probe: the project's pin and skill compared with the running version. */
+function setupStatus(): string {
+  const pinned = pinnedVersion();
+  const pin = !pinned
+    ? `not pinned (${VERSION_FILE} missing) — ${RUN} skill`
+    : pinned === VERSION ? `v${pinned}` : `v${pinned}, while v${VERSION} is running — to move the project to it: ${RUN} skill`;
+  const skill = readText(SKILL_DST);
+  const state = skill === undefined ? `not installed — ${RUN} skill` : skill === skillText() ? 'matches' : `differs from this version — ${RUN} skill`;
+  return `version ${pin}; skill ${state}`;
 }
 
-async function installSkill() {
-  const status = skillStatus();
-  if (status === 'current') out(`- Skill ${SKILL_DST} is up to date (v${VERSION})`);
+/** Pins the project to the running version (.jira/version), installs its skill and keeps .jira/.gitignore current. */
+async function useThisVersion() {
+  await mkdir(CONFIG_DIR, { recursive: true });
+  const ignore = join(CONFIG_DIR, '.gitignore');
+  if (readText(ignore) !== JIRA_GITIGNORE) {
+    await writeFile(ignore, JIRA_GITIGNORE);
+    out(`- ${ignore}: .jira/ stays out of git except the version pin`);
+  }
+  const pinned = pinnedVersion();
+  if (pinned !== VERSION) await writeFile(VERSION_FILE, `${VERSION}\n`);
+  out(`- Version ${VERSION_FILE}: ${pinned && pinned !== VERSION ? `v${pinned} → ` : ''}v${VERSION}`);
+  const skill = readText(SKILL_DST);
+  if (skill === skillText()) out(`- Skill ${SKILL_DST} is up to date`);
   else {
     await mkdir(dirname(SKILL_DST), { recursive: true });
     await writeFile(SKILL_DST, skillText());
-    out(`- Skill ${status === 'missing' ? 'installed' : 'updated'}: ${SKILL_DST} (v${VERSION})`);
+    out(`- Skill ${skill === undefined ? 'installed' : 'updated'}: ${SKILL_DST}`);
   }
   // The project's settings.json is not touched (it holds other rules too) — only a reminder if the token deny rule is missing
   const settings = resolve('.claude', 'settings.json');
@@ -496,7 +509,7 @@ const USAGE =
   '  track [KEY…] [--jql "<JQL>"] [--page <pageId|URL>] [--since YYYY-MM-DD] [--remove KEY|pageId]\n' +
   '                                        changes in issues and linked wiki pages since the last run\n' +
   '  docx <file.docx>…                     local .docx → .md next to it\n' +
-  '  init | skill | version                set up the project / update the Claude Code skill / tool version';
+  '  init | skill | version                set up the project / pin it to this version + its skill / tool version';
 
 function usage(text: string) {
   out(text);
@@ -559,7 +572,7 @@ async function main() {
     case 'init':
       return init();
     case 'skill':
-      return installSkill();
+      return useThisVersion();
     case 'docx':
       // Local .docx files (e.g. specs from unpacked attachment archives) → .md next to them, images as files.
       if (!args.length) throw new Error('Pass the .docx path(s)');

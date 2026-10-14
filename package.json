@@ -1,10 +1,11 @@
 {
   "name": "atlasmd",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "private": true,
   "type": "module",
   "description": "Give your coding agent safe, read-only access to Jira and Confluence: issues and wiki pages as Markdown files, with a Claude Code skill",
   "license": "MIT",
+  "repository": "github:ivzkv/atlasmd",
   "engines": {
     "node": ">=23.8"
   },

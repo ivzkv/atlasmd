@@ -4,11 +4,14 @@
 //
 //   ./.jira/.env   — URLs and tokens (JIRA_ENV_FILE — an explicit other path)
 //   ./.jira/out/   — issues, wiki pages, attachments, track state (JIRA_OUT_DIR — an explicit other path)
+//   ./.jira/version — the tool version the project is pinned to; the only file of .jira/ that goes to git
 
 import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { RUN } from './package.ts';
 
-const CONFIG_DIR = resolve('.jira');
+export const CONFIG_DIR = resolve('.jira');
+export const VERSION_FILE = join(CONFIG_DIR, 'version');
 
 export const ENV_FILE = resolve(process.env.JIRA_ENV_FILE?.trim() || join(CONFIG_DIR, '.env'));
 export const ENV_FOUND = existsSync(ENV_FILE);
@@ -23,4 +26,4 @@ export const OUT_DIR = resolve(process.env.JIRA_OUT_DIR?.trim() || join(CONFIG_D
 export const envHint = () =>
   ENV_FOUND
     ? `fill in ${ENV_FILE}`
-    : `${ENV_FILE} does not exist — run from the project root (where .jira/ is) or create it: npx --no atlasmd init`;
+    : `${ENV_FILE} does not exist — run from the project root (where .jira/ is) or create it: ${RUN} init`;

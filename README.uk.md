@@ -26,7 +26,7 @@ atlasmd — невеликий CLI, який перетворює тікети J
 - **Падає одразу, без повторів.** На 401, CAPTCHA чи редирект на SSO зупиняється відразу — агент у циклі не
   заблокує обліковий запис повторними спробами.
 - **Помилки підказують наступний крок.** У помилці — точний шлях і команда, яку виконати
-  (`… or create it: npx --no atlasmd init`), тож агент виправляється сам.
+  (`… or create it: npx -y github:ivzkv/atlasmd#vX.Y.Z init`), тож агент виправляється сам.
 - **«Що змінилось?» — з коробки.** `track` показує, що змінилось у тікетах і пов'язаних сторінках wiki з минулого
   запуску чи з дати — готова відповідь на одне з найчастіших питань.
 - **Власний skill для Claude Code.** Інструкції для агента йдуть разом із пакетом, відповідають його версії,
@@ -37,8 +37,8 @@ atlasmd — невеликий CLI, який перетворює тікети J
 ```
 > що в PROJ-123 і що змінилось з учора?
 
-$ npx --no atlasmd jira issue PROJ-123
-$ npx --no atlasmd track PROJ-123 --since 2026-10-13
+$ npx -y github:ivzkv/atlasmd#vX.Y.Z jira issue PROJ-123
+$ npx -y github:ivzkv/atlasmd#vX.Y.Z track PROJ-123 --since 2026-10-13
 → агент читає .jira/out/PROJ-123/PROJ-123.md і звіт track та відповідає
 ```
 
@@ -47,22 +47,25 @@ $ npx --no atlasmd track PROJ-123 --since 2026-10-13
 Потрібен Node ≥ 23.8. З кореня вашого проєкту:
 
 ```
-npm i -D "git+https://github.com/ivzkv/atlasmd.git#semver:^1.0.0"   # 1. встановити (збирається при встановленні)
-npx --no atlasmd init                                                # 2. створити .jira/.env, .jira/.gitignore і skill
-                                                                     # 3. вписати свої URL і токен у .jira/.env
-npx --no atlasmd probe                                               # 4. перевірити доступ
+npx -y github:ivzkv/atlasmd#vX.Y.Z init    # 1. створити .jira/.env, закріпити vX.Y.Z у .jira/version, поставити skill
+                                         # 2. вписати свої URL і токен у .jira/.env
+npx -y github:ivzkv/atlasmd#vX.Y.Z probe   # 3. перевірити доступ
 ```
 
-Усі, хто працює з проєктом, отримують інструмент через `npm install`; кожен один раз запускає `init` і вписує свій
-токен. Запускайте завжди як `npx --no atlasmd …` — без `--no`, якщо пакет не встановлено, npx скачає з публічного
-npm будь-який пакет з такою назвою.
+`vX.Y.Z` — тег релізу (див. [Releases](https://github.com/ivzkv/atlasmd/releases)). У проєкт нічого не ставиться —
+ні package.json, ні node_modules: npx під час першого запуску качає цей тег з GitHub (потрібен `git`) і кешує.
+Версія закріплена в `.jira/version` (один рядок, напр. `1.0.2`); skill каже Claude прочитати її й запускати цей тег.
+Закомітьте `.jira/version`, `.jira/.gitignore` і skill: у всіх у проєкті буде одна версія, кожен один раз запускає
+`init` і вписує свій токен. Завжди вказуйте репозиторій і тег — просто `npx atlasmd` скачає з публічного npm
+будь-який пакет з такою назвою.
 
-Налаштування й результати лежать у проєкті, а не в пакеті, і вся тека `.jira/` поза git завдяки власному
-`.gitignore` (`.gitignore` проєкту правити не треба):
+Налаштування й результати лежать у проєкті, а не в пакеті; у `.jira/` свій `.gitignore`, який тримає поза git усе,
+крім закріпленої версії (`.gitignore` проєкту правити не треба):
 
 ```
-<корінь проєкту>/.jira/.env    URL і токени          (інший шлях — JIRA_ENV_FILE)
-<корінь проєкту>/.jira/out/    тікети, wiki, track   (інший шлях — JIRA_OUT_DIR)
+<корінь проєкту>/.jira/version  закріплена версія      (у git)
+<корінь проєкту>/.jira/.env     URL і токени           (інший шлях — JIRA_ENV_FILE)
+<корінь проєкту>/.jira/out/     тікети, wiki, track    (інший шлях — JIRA_OUT_DIR)
 ```
 
 Інструмент бере `.jira/` лише в поточній теці й вгору не шукає — запускайте з кореня проєкту (з іншої теки —
@@ -70,9 +73,12 @@ npm будь-який пакет з такою назвою.
 
 ## Використання з Claude Code
 
-- `npx --no atlasmd skill` (робить і `init`) кладе в проєкт `.claude/skills/atlasmd/SKILL.md` з установленої версії
-  пакета. Він пояснює Claude, коли й як користуватися інструментом, що робити при збоях і чого не чіпати ніколи.
-  Після `npm update atlasmd` — повторити й закомітити diff; `probe` показує, чи skill актуальний.
+- `skill` (робить і `init`) закріплює за проєктом версію, що його запустила (`.jira/version`), і ставить
+  `.claude/skills/atlasmd/SKILL.md` цієї версії. Skill пояснює Claude, коли й як користуватися інструментом, що
+  робити при збоях і чого не чіпати ніколи. Версії в ньому немає — це `skills/atlasmd/SKILL.md` з цього репозиторію
+  як є, тож у проєкті він змінюється, лише коли змінюється його текст тут.
+- Перевести проєкт на іншу версію: `npx -y github:ivzkv/atlasmd#v<нова версія> skill` і закомітити diff;
+  `probe` друкує закріплену версію і чи skill збігається із запущеною версією.
 - Заборонити Claude доступ до токенів у `.claude/settings.json` проєкту:
   `"permissions": { "deny": ["Read(/.jira/.env*)", "Edit(/.jira/.env*)"] }`. `skill` нагадає, якщо правила немає.
 
@@ -80,6 +86,8 @@ npm будь-який пакет з такою назвою.
 в shell і читати файл.
 
 ## Команди
+
+`atlasmd` нижче — скорочення для `npx -y github:ivzkv/atlasmd#vX.Y.Z` (`X.Y.Z` — з `.jira/version` проєкту).
 
 ```
 atlasmd jira issue PROJ-123                         # тікет: поля, опис, коментарі, лінки (у т.ч. на wiki) → stdout і .jira/out/PROJ-123/PROJ-123.md;
@@ -144,7 +152,7 @@ atlasmd track --remove PROJ-456                     # зняти з нагляд
 
 ## Налаштування
 
-`.jira/.env` (створює `npx --no atlasmd init` з [env.example](env.example)) — один із варіантів; для Jira і Confluence
+`.jira/.env` (створює `init` з [env.example](env.example)) — один із варіантів; для Jira і Confluence
 можуть бути різні:
 
 - **Server/DC:** `JIRA_BASE_URL` + `JIRA_TOKEN`, `CONFLUENCE_BASE_URL` + `CONFLUENCE_TOKEN` — окремі PAT з профілів
@@ -187,14 +195,14 @@ npm run typecheck
 npm run build                  # dist/ — те, що запускає bin/atlasmd.js
 ```
 
-Щоб спробувати локальні зміни в проєкті, підключіть робочу копію (у package.json проєкту нічого не пишеться):
+Щоб спробувати локальні зміни в проєкті, запустіть робочу копію з кореня проєкту після `npm run build`
+(skill проєкту й далі вказує на свій тег):
 
 ```
-cd atlasmd && npm link                      # один раз
-cd <проєкт> && npm link atlasmd             # повторювати після кожного npm install / npm ci у проєкті
+node <шлях до atlasmd>/bin/atlasmd.js jira issue X-1
 ```
 
-Підключені проєкти бачать зміни після `npm run build`. Залежності — лише конвертери в Markdown: `turndown` (+gfm для
+Залежності — лише конвертери в Markdown: `turndown` (+gfm для
 таблиць) і `mammoth` для `.docx`.
 
 ## Релізи
@@ -209,8 +217,7 @@ git push origin main:release              # .github/workflows/release.yml: пе�
 ```
 
 Workflow падає, нічого не публікуючи, якщо тег уже є (версію не підняли) або перевірки не пройшли. У проєктах:
-`"atlasmd": "git+https://github.com/ivzkv/atlasmd.git#semver:^1.0.0"`; оновлення — `npm update atlasmd`,
-`npx --no atlasmd skill`, коміт package-lock.json і skill. Ламаючі зміни (команди, формат `.jira/.env`) — лише в новій
+`npx -y github:ivzkv/atlasmd#v<нова версія> skill`, коміт `.jira/version` і skill. Ламаючі зміни (команди, формат `.jira/.env`) — лише в новій
 major-версії.
 
 ## Ліцензія

@@ -23,7 +23,7 @@ just as usable by hand. Works with self-hosted Server/Data Center and Atlassian 
 - **Fails fast, never retries.** On 401, CAPTCHA or an SSO redirect it stops at once — an agent in a loop cannot
   lock the account with repeated attempts.
 - **Errors tell the next step.** Errors include the exact path and the command to run
-  (`… or create it: npx --no atlasmd init`), so the agent can fix things on its own.
+  (`… or create it: npx -y github:ivzkv/atlasmd#vX.Y.Z init`), so the agent can fix things on its own.
 - **"What changed?" built in.** `track` reports what changed in issues and their linked wiki pages since the last
   run or a date — a ready answer to one of the most common questions.
 - **Ships its own Claude Code skill.** The agent instructions come with the package, match its version, install with
@@ -34,8 +34,8 @@ just as usable by hand. Works with self-hosted Server/Data Center and Atlassian 
 ```
 > what is in PROJ-123 and what changed since yesterday?
 
-$ npx --no atlasmd jira issue PROJ-123
-$ npx --no atlasmd track PROJ-123 --since 2026-10-13
+$ npx -y github:ivzkv/atlasmd#vX.Y.Z jira issue PROJ-123
+$ npx -y github:ivzkv/atlasmd#vX.Y.Z track PROJ-123 --since 2026-10-13
 → the agent reads .jira/out/PROJ-123/PROJ-123.md and the track report, and answers
 ```
 
@@ -44,22 +44,25 @@ $ npx --no atlasmd track PROJ-123 --since 2026-10-13
 Requires Node ≥ 23.8. Run from the root of your project:
 
 ```
-npm i -D "git+https://github.com/ivzkv/atlasmd.git#semver:^1.0.0"   # 1. install (built on install)
-npx --no atlasmd init                                                # 2. create .jira/.env, .jira/.gitignore and the skill
-                                                                     # 3. fill in your URLs and token in .jira/.env
-npx --no atlasmd probe                                               # 4. check access
+npx -y github:ivzkv/atlasmd#vX.Y.Z init    # 1. create .jira/.env, pin vX.Y.Z in .jira/version, install the skill
+                                         # 2. fill in your URLs and token in .jira/.env
+npx -y github:ivzkv/atlasmd#vX.Y.Z probe   # 3. check access
 ```
 
-Everyone working on the project gets the tool with `npm install`; each person runs `init` once and fills in their own
-token. Always run it as `npx --no atlasmd …` — without `--no`, if the package is not installed, npx downloads
-whatever public npm package has that name.
+`vX.Y.Z` is a release tag (see [Releases](https://github.com/ivzkv/atlasmd/releases)). Nothing is installed in the
+project — no package.json, no node_modules: npx fetches that tag from GitHub on first run (needs `git`) and caches it.
+The version is pinned in `.jira/version` (one line, e.g. `1.0.2`); the skill tells Claude to read it and run that tag.
+Commit `.jira/version`, `.jira/.gitignore` and the skill: everyone on the project gets the same version, runs `init`
+once and fills in their own token. Always give the repository and tag — a plain `npx atlasmd` would fetch whatever
+public npm package has that name.
 
-Settings and results live in the project, not in the package, and the whole `.jira/` folder stays out of git
-through its own `.gitignore` (the project's `.gitignore` needs no changes):
+Settings and results live in the project, not in the package; `.jira/` has its own `.gitignore` that keeps everything
+except the version pin out of git (the project's `.gitignore` needs no changes):
 
 ```
-<project root>/.jira/.env    URLs and tokens          (other path — JIRA_ENV_FILE)
-<project root>/.jira/out/    issues, wiki, track      (other path — JIRA_OUT_DIR)
+<project root>/.jira/version  pinned tool version      (committed)
+<project root>/.jira/.env     URLs and tokens          (other path — JIRA_ENV_FILE)
+<project root>/.jira/out/     issues, wiki, track      (other path — JIRA_OUT_DIR)
 ```
 
 The tool reads `.jira/` only in the current folder and does not search parent folders — run it from the project
@@ -67,15 +70,20 @@ root (from another folder you get an error with the exact path). `probe` prints 
 
 ## Using with Claude Code
 
-- `npx --no atlasmd skill` (also run by `init`) puts `.claude/skills/atlasmd/SKILL.md` from the installed package
-  version into the project. It tells Claude when and how to use the tool, how to handle failures, and what never
-  to touch. After `npm update atlasmd`, run it again and commit the diff; `probe` shows whether the skill is up to date.
+- `skill` (also run by `init`) pins the project to the version that runs it (`.jira/version`) and installs that
+  version's `.claude/skills/atlasmd/SKILL.md`. The skill tells Claude when and how to use the tool, how to handle
+  failures, and what never to touch. It holds no version — it is `skills/atlasmd/SKILL.md` from this repository as is,
+  so in a project it changes only when its text changes here.
+- To move the project to another version: `npx -y github:ivzkv/atlasmd#v<new version> skill`, then commit the diff;
+  `probe` prints the pinned version and whether the skill matches the running version.
 - Deny Claude access to the tokens in the project's `.claude/settings.json`:
   `"permissions": { "deny": ["Read(/.jira/.env*)", "Edit(/.jira/.env*)"] }`. `skill` reminds you if the rule is missing.
 
 Other agents can use the same commands — any agent that can run a shell command and read a file works.
 
 ## Commands
+
+`atlasmd` below is short for `npx -y github:ivzkv/atlasmd#vX.Y.Z` (`X.Y.Z` from the project's `.jira/version`).
 
 ```
 atlasmd jira issue PROJ-123                         # issue: fields, description, comments, links (incl. wiki) → stdout and .jira/out/PROJ-123/PROJ-123.md;
@@ -140,7 +148,7 @@ Dynamic parts of the Jira macro in wiki pages (issue title/status) are ignored w
 
 ## Configuration
 
-`.jira/.env` (created by `npx --no atlasmd init` from [env.example](env.example)) — one of the options; Jira and
+`.jira/.env` (created by `init` from [env.example](env.example)) — one of the options; Jira and
 Confluence may differ:
 
 - **Server/DC:** `JIRA_BASE_URL` + `JIRA_TOKEN`, `CONFLUENCE_BASE_URL` + `CONFLUENCE_TOKEN` — separate PATs from the
@@ -183,14 +191,14 @@ npm run typecheck
 npm run build                  # dist/ — what bin/atlasmd.js runs
 ```
 
-To try local changes in a project, link the working copy (nothing is written to the project's package.json):
+To try local changes in a project, run the working copy from the project root after `npm run build` (the project's
+skill keeps pointing to its tag):
 
 ```
-cd atlasmd && npm link                      # once
-cd <project> && npm link atlasmd            # repeat after every npm install / npm ci in the project
+node <path to atlasmd>/bin/atlasmd.js jira issue X-1
 ```
 
-Linked projects see changes after `npm run build`. Dependencies are only Markdown converters: `turndown` (+ gfm for
+Dependencies are only Markdown converters: `turndown` (+ gfm for
 tables) and `mammoth` for `.docx`.
 
 ## Releases
@@ -205,8 +213,7 @@ git push origin main:release              # .github/workflows/release.yml: check
 ```
 
 The workflow fails without publishing anything if the tag already exists (the version was not bumped) or the checks
-fail. In projects: `"atlasmd": "git+https://github.com/ivzkv/atlasmd.git#semver:^1.0.0"`; to update —
-`npm update atlasmd`, `npx --no atlasmd skill`, commit package-lock.json and the skill. Breaking changes (commands,
+fail. In projects: `npx -y github:ivzkv/atlasmd#v<new version> skill`, commit `.jira/version` and the skill. Breaking changes (commands,
 `.jira/.env` format) only in a new major version.
 
 ## License
