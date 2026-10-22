@@ -13,6 +13,8 @@
 //                         with --attachments the other attachments too (.docx → also .md)
 //   jira search "<JQL>" [N]
 //                         issue search, N results (default 20)
+//   jira worklog [--from YYYY-MM-DD] [--to YYYY-MM-DD]
+//                         own logged time per day (default: current month), with a per-issue breakdown
 //   jira attachments <KEY>
 //                         download all issue attachments to .atlasmd/out/<KEY>/ (.docx also to .md)
 //
@@ -339,6 +341,58 @@ async function search(jira: RestClient, jql: string, limit: number) {
   }
 }
 
+// ---------- worklog ----------
+
+const pad2 = (n: number) => String(n).padStart(2, '0');
+const isoDay = (d: Date) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+const hours = (sec: number) => (sec / 3600).toFixed(2);
+
+/** Own worklogs for a period: day → hours, with a per-issue breakdown. Read-only (search + GET worklog). */
+async function worklog(jira: RestClient, args: string[]) {
+  const opt = (name: string) => {
+    const i = args.indexOf(name);
+    if (i < 0) return undefined;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(args[i + 1] ?? '')) throw new Error(`${name} needs a date YYYY-MM-DD`);
+    return args[i + 1];
+  };
+  const now = new Date();
+  const from = opt('--from') ?? `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-01`;
+  const to = opt('--to') ?? isoDay(now);
+  const me = await jira.get<Json>('/rest/api/2/myself');
+  const meId = userId(me);
+  const r = await searchIssues(jira, `worklogAuthor = currentUser() AND worklogDate >= "${from}" AND worklogDate <= "${to}"`, 'summary', 200);
+  const days = new Map<string, Map<string, number>>();
+  for (const i of r.issues) {
+    for (let startAt = 0; ; ) {
+      const page = await jira.get<Json>(`/rest/api/2/issue/${i.key}/worklog?startAt=${startAt}&maxResults=1000`);
+      const logs: Json[] = page.worklogs ?? [];
+      for (const w of logs) {
+        if (userId(w.author) !== meId) continue;
+        // `started` is the user's local date with an offset; its first 10 chars are the day the user logged it on
+        const day = String(w.started).slice(0, 10);
+        if (day < from || day > to) continue;
+        const perIssue = days.get(day) ?? new Map<string, number>();
+        perIssue.set(i.key, (perIssue.get(i.key) ?? 0) + (w.timeSpentSeconds ?? 0));
+        days.set(day, perIssue);
+      }
+      startAt += logs.length;
+      if (!logs.length || startAt >= (page.total ?? 0)) break;
+    }
+  }
+  out(`Worklog of ${me.displayName ?? meId}, ${from} … ${to}
+`);
+  out('| Date | Hours | Issues |');
+  out('|---|---|---|');
+  let total = 0;
+  for (const day of [...days.keys()].sort()) {
+    const perIssue = days.get(day)!;
+    const sec = [...perIssue.values()].reduce((a, b) => a + b, 0);
+    total += sec;
+    out(`| ${day} | ${hours(sec)} | ${[...perIssue].map(([k, v]) => `${k}: ${hours(v)}`).join(', ')} |`);
+  }
+  out(`| **Total** | **${hours(total)}** | ${days.size} day(s) |`);
+}
+
 // ---------- attachments ----------
 
 const isImageAttachment = (a: Json) =>
@@ -498,6 +552,7 @@ async function useThisVersion() {
 const JIRA_USAGE =
   '  jira issue <KEY> [--attachments]      issue → Markdown (+ all attachments)\n' +
   '  jira search "<JQL>" [N]               issue search (default 20)\n' +
+  '  jira worklog [--from D] [--to D]      own logged hours per day (default: this month)\n' +
   '  jira attachments <KEY>                download all issue attachments';
 const WIKI_USAGE =
   '  wiki page <pageId|URL> [--attachments]           Confluence page → Markdown (+ all attachments)\n' +
@@ -526,7 +581,7 @@ function confluenceClient(): RestClient {
 }
 
 async function jiraCommand(sub: string | undefined, args: string[]) {
-  if (!sub || !['issue', 'search', 'attachments'].includes(sub)) return usage(`Jira commands:\n${JIRA_USAGE}`);
+  if (!sub || !['issue', 'search', 'worklog', 'attachments'].includes(sub)) return usage(`Jira commands:\n${JIRA_USAGE}`);
   const jira = new RestClient(loadJiraConfig());
   switch (sub) {
     case 'issue':
@@ -535,6 +590,8 @@ async function jiraCommand(sub: string | undefined, args: string[]) {
     case 'search':
       if (!args[0]) throw new Error('Pass JQL in quotes');
       return search(jira, args[0], Number(args[1] ?? 20));
+    case 'worklog':
+      return worklog(jira, args);
     case 'attachments':
       if (!args[0]) throw new Error('Pass an issue key, e.g. jira attachments PROJ-123');
       return attachments(jira, args[0].toUpperCase());

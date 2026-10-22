@@ -1,6 +1,6 @@
 {
   "name": "atlasmd",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "private": true,
   "type": "module",
   "description": "Give your coding agent safe, read-only access to Jira and Confluence: issues and wiki pages as Markdown files, with a Claude Code skill",
